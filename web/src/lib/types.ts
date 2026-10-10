@@ -4,6 +4,8 @@ export type Status = 0 | 1 | 2 | 3
 export type MonitorType =
   | 'http' | 'keyword' | 'json-query' | 'tcp' | 'ping' | 'dns' | 'push' | 'group'
   | 'docker' | 'postgres' | 'mysql' | 'redis' | 'backpack-tunnel' | 'backpack-panel'
+  | 'agent' | 'agent-tunnel' | 'smtp' | 'mongodb' | 'mssql' | 'mqtt' | 'grpc' | 'radius'
+  | 'snmp' | 'steam' | 'kafka' | 'udp' | 'websocket' | 'tls'
 
 export interface MonitorConfig {
   url?: string
@@ -34,6 +36,19 @@ export interface MonitorConfig {
   panelId?: number
   tunnelName?: string
   serviceDownIsDown?: boolean
+  agentId?: number
+  source?: 'backpack' | 'kariz'
+  username?: string
+  password?: string
+  topic?: string
+  secret?: string
+  community?: string
+  oid?: string
+  snmpVersion?: string
+  service?: string
+  security?: string
+  payload?: string
+  warnDays?: number
 }
 
 export interface MonitorTag { tagId: number; name: string; color: string; value: string }
@@ -52,6 +67,7 @@ export interface Monitor {
   upsideDown: boolean
   description: string
   config: MonitorConfig
+  country: string
   pushToken?: string
   sortOrder: number
   createdAt: number
@@ -86,6 +102,8 @@ export interface CertInfo {
 export interface RatePoint { t: number; in: number; out: number }
 
 export interface Tunnel {
+  source?: 'backpack' | 'kariz'
+  lastError?: string
   name: string
   role: string
   transport: string
@@ -146,6 +164,7 @@ export interface MonitorView extends Monitor {
   cert?: CertInfo
   tunnel?: Tunnel
   system?: PanelSystem
+  agent?: AgentInfo
   nextCheck: number
   maintenance: boolean
   target: string
@@ -176,7 +195,7 @@ export interface ProviderField {
 
 export interface Provider { type: string; name: string; group: string; fields: ProviderField[] }
 
-export type Theme = 'aurora' | 'clarity' | 'lime' | 'noir'
+export type Theme = 'zen' | 'aurora' | 'clarity' | 'lime' | 'noir'
 
 export interface StatusPageGroup { id?: number; name: string; monitors: { monitorId: number; showUrl: boolean }[] }
 
@@ -198,6 +217,10 @@ export interface StatusPage {
   showCharts: boolean
   published: boolean
   refreshInterval: number
+  language: 'auto' | 'en' | 'fa'
+  showUptime: boolean
+  showLatency: boolean
+  showBanner: boolean
   createdAt: number
   updatedAt: number
   groups: StatusPageGroup[]
@@ -267,6 +290,7 @@ export interface User {
   username: string
   role: 'admin' | 'editor' | 'viewer'
   totpEnabled: boolean
+  isOwner: boolean
   createdAt: number
   lastLogin: number
 }
@@ -285,3 +309,68 @@ export interface ApiKey {
 export interface ChartPoint { t: number; ping: number | null; min?: number; max?: number; status: Status; up?: number; down?: number }
 
 export interface UptimeStat { ratio: number; checks: number; avgPing: number }
+
+export interface AgentSystem {
+  hostname: string
+  os: string
+  kernel: string
+  arch: string
+  uptimeSecs: number
+  cpuPercent: number
+  cpuCores: number
+  load1: number
+  load5: number
+  load15: number
+  memTotal: number
+  memUsed: number
+  swapTotal: number
+  swapUsed: number
+  diskTotal: number
+  diskUsed: number
+  netRxBytes: number
+  netTxBytes: number
+  netRxRate: number
+  netTxRate: number
+  tcpConns: number
+}
+
+export interface SourceSummary { installed: boolean; mode?: string; version?: string; error?: string; tunnels: number; online: number }
+
+export interface AgentInfo {
+  system: AgentSystem
+  receivedAt: number
+  version: string
+  ip: string
+  backpack?: SourceSummary
+  kariz?: SourceSummary
+}
+
+export interface Agent {
+  id: number
+  name: string
+  tokenPrefix: string
+  country: string
+  interval: number
+  autoImport: boolean
+  groupMonitorId: number | null
+  createdAt: number
+  lastSeen: number
+  lastIp: string
+  version: string
+  hostname: string
+  online: boolean
+  info?: AgentInfo
+}
+
+export interface AgentSource { installed: boolean; mode?: string; version?: string; error?: string; tunnels: Tunnel[] }
+
+export interface StatusApiKey {
+  id: number
+  name: string
+  prefix: string
+  statusPageId: number
+  allowedOrigins: string
+  createdAt: number
+  lastUsed: number
+  active: boolean
+}

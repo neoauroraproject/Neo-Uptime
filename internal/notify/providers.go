@@ -22,7 +22,7 @@ func init() {
 		Type: "telegram", Name: "Telegram", Group: "Chat",
 		Fields: []Field{
 			{Key: "botToken", Label: "Bot token", Type: "password", Required: true, Placeholder: "123456:ABC-DEF…", Help: "From @BotFather."},
-			{Key: "chatId", Label: "Chat ID", Type: "text", Required: true, Placeholder: "-1001234567890", Help: "User, group or channel id. Message @userinfobot to find yours."},
+			{Key: "chatId", Label: "Chat ID", Type: "text", Required: true, Placeholder: "-1001234567890", Help: "Send any message to your bot (or add it to the group), then press Find chats."},
 			{Key: "threadId", Label: "Topic (thread) ID", Type: "text", Help: "Optional — for forum topics in supergroups."},
 			{Key: "apiBase", Label: "API server", Type: "url", Default: "https://api.telegram.org", Help: "Change when api.telegram.org is filtered — e.g. a Cloudflare Worker relay."},
 			{Key: "proxy", Label: "Proxy", Type: "text", Placeholder: "socks5://127.0.0.1:1080", Help: "Optional http(s):// or socks5:// proxy for reaching Telegram."},
@@ -131,7 +131,7 @@ func telegramHTML(e Event) string {
 		b.WriteString("\n<b>" + html.EscapeString(kv[0]) + ":</b> " + html.EscapeString(kv[1]))
 	}
 	if e.Link != "" {
-		b.WriteString("\n<a href=\"" + html.EscapeString(e.Link) + "\">Open dashboard</a>")
+		b.WriteString("\n<a href=\"" + html.EscapeString(e.Link) + "\">" + e.LinkLabel() + "</a>")
 	}
 	return b.String()
 }
@@ -216,7 +216,7 @@ func sendTeams(ctx context.Context, cfg map[string]string, e Event) error {
 		},
 	}
 	if e.Link != "" {
-		card["actions"] = []any{map[string]any{"type": "Action.OpenUrl", "title": "Open dashboard", "url": e.Link}}
+		card["actions"] = []any{map[string]any{"type": "Action.OpenUrl", "title": e.LinkLabel(), "url": e.Link}}
 	}
 	body := map[string]any{
 		"type": "message",
@@ -372,7 +372,11 @@ func sendEmail(ctx context.Context, cfg map[string]string, e Event) error {
 		return err
 	}
 	var htmlBody strings.Builder
-	htmlBody.WriteString(`<div style="font-family:system-ui,sans-serif;max-width:560px">`)
+	dir := "ltr"
+	if e.fa() {
+		dir = "rtl"
+	}
+	fmt.Fprintf(&htmlBody, `<div dir="%s" style="font-family:Vazirmatn,Tahoma,system-ui,sans-serif;max-width:560px">`, dir)
 	fmt.Fprintf(&htmlBody, `<h2 style="margin:0 0 12px;color:#%06x">%s</h2><table style="border-collapse:collapse">`, e.Color(), html.EscapeString(e.Title()))
 	for _, kv := range e.Lines() {
 		fmt.Fprintf(&htmlBody, `<tr><td style="padding:4px 12px 4px 0;color:#64748b">%s</td><td style="padding:4px 0">%s</td></tr>`,
@@ -380,7 +384,7 @@ func sendEmail(ctx context.Context, cfg map[string]string, e Event) error {
 	}
 	htmlBody.WriteString(`</table>`)
 	if e.Link != "" {
-		fmt.Fprintf(&htmlBody, `<p><a href="%s">Open dashboard</a></p>`, html.EscapeString(e.Link))
+		fmt.Fprintf(&htmlBody, `<p><a href="%s">%s</a></p>`, html.EscapeString(e.Link), e.LinkLabel())
 	}
 	htmlBody.WriteString(`</div>`)
 

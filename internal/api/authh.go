@@ -41,6 +41,7 @@ type caller struct {
 	Role        role
 	SessionHash string
 	KeyName     string
+	IsOwner     bool
 }
 
 type ctxKey struct{}
@@ -145,7 +146,7 @@ func (s *Server) identify(r *http.Request) (*caller, error) {
 		}
 		s.db.TouchSession(ctx, hash, exp)
 	}
-	return &caller{Kind: "session", UserID: u.ID, Username: u.Username, Role: parseRole(u.Role), SessionHash: hash}, nil
+	return &caller{Kind: "session", UserID: u.ID, Username: u.Username, Role: parseRole(u.Role), SessionHash: hash, IsOwner: u.IsOwner}, nil
 }
 
 var (
@@ -188,6 +189,17 @@ func (s *Server) session(next http.HandlerFunc) http.HandlerFunc {
 	return s.guard(roleViewer, true, next)
 }
 func (s *Server) admin(next http.HandlerFunc) http.HandlerFunc { return s.guard(roleAdmin, true, next) }
+
+// owner allows only the account that owns the instance (the one made at setup).
+func (s *Server) owner(next http.HandlerFunc) http.HandlerFunc {
+	return s.guard(roleAdmin, true, func(w http.ResponseWriter, r *http.Request) {
+		if !callerFrom(r).IsOwner {
+			writeErr(w, http.StatusForbidden, "only the owner account can do this")
+			return
+		}
+		next(w, r)
+	})
+}
 
 func (s *Server) secureRequest(r *http.Request) bool {
 	if r.TLS != nil {
@@ -294,7 +306,7 @@ func (s *Server) handleSetup(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusInternalServerError, "hashing failed")
 		return
 	}
-	u := &store.User{Username: in.Username, PasswordHash: hash, Role: "admin"}
+	u := &store.User{Username: in.Username, PasswordHash: hash, Role: "admin", IsOwner: true}
 	if err := s.db.CreateUser(r.Context(), u); err != nil {
 		writeStoreErr(w, err)
 		return
@@ -358,7 +370,7 @@ func (s *Server) handleLogout(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handleMe(w http.ResponseWriter, r *http.Request) {
 	who := callerFrom(r)
-	out := map[string]any{"kind": who.Kind, "role": []string{"viewer", "editor", "admin"}[who.Role]}
+	out := map[string]any{"kind": who.Kind, "role": []string{"viewer", "editor", "admin"}[who.Role], "isOwner": who.IsOwner}
 	if who.Kind == "session" {
 		if u, err := s.db.GetUser(r.Context(), who.UserID); err == nil {
 			out["user"] = u

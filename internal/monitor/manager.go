@@ -30,6 +30,7 @@ type State struct {
 	Cert      *CertInfo        `json:"cert,omitempty"`
 	Tunnel    *backpack.Tunnel `json:"tunnel,omitempty"`
 	System    *backpack.System `json:"system,omitempty"`
+	Agent     *AgentInfo       `json:"agent,omitempty"`
 	NextCheck int64            `json:"nextCheck"` // unix ms
 
 	lastPush  time.Time
@@ -45,6 +46,7 @@ type Snapshot struct {
 	Cert      *CertInfo        `json:"cert,omitempty"`
 	Tunnel    *backpack.Tunnel `json:"tunnel,omitempty"`
 	System    *backpack.System `json:"system,omitempty"`
+	Agent     *AgentInfo       `json:"agent,omitempty"`
 	NextCheck int64            `json:"nextCheck"`
 }
 
@@ -67,16 +69,20 @@ type Manager struct {
 	states  map[int64]*State
 	parents map[int64]int64
 	types   map[int64]string
+	agentOf map[int64]int64 // monitor id -> agent id
+
+	importMu sync.Mutex
 
 	maintMu sync.RWMutex
 	maints  []*store.Maintenance
 }
 
 // NewManager wires a manager. Start must be called before use.
-func NewManager(db *store.DB, bp *backpack.Cache, pub Publisher) *Manager {
+func NewManager(db *store.DB, bp *backpack.Cache, agents *AgentHub, pub Publisher) *Manager {
 	return &Manager{
 		db:      db,
-		env:     &Env{DB: db, Backpack: bp},
+		env:     &Env{DB: db, Backpack: bp, Agents: agents},
+		agentOf: map[int64]int64{},
 		pub:     pub,
 		runners: map[int64]*runner{},
 		states:  map[int64]*State{},
@@ -118,6 +124,11 @@ func (mg *Manager) track(m *store.Monitor) {
 		delete(mg.parents, m.ID)
 	}
 	mg.types[m.ID] = m.Type
+	if m.Config.AgentID != 0 && (m.Type == TypeAgent || m.Type == TypeAgentTunnel) {
+		mg.agentOf[m.ID] = m.Config.AgentID
+	} else {
+		delete(mg.agentOf, m.ID)
+	}
 	if _, ok := mg.states[m.ID]; !ok {
 		mg.states[m.ID] = &State{}
 	}
@@ -147,7 +158,7 @@ func (mg *Manager) States() map[int64]Snapshot {
 	out := make(map[int64]Snapshot, len(ids))
 	for i, st := range sts {
 		st.mu.Lock()
-		out[ids[i]] = Snapshot{Last: st.Last, Retries: st.Retries, Cert: st.Cert, Tunnel: st.Tunnel, System: st.System, NextCheck: st.NextCheck}
+		out[ids[i]] = Snapshot{Last: st.Last, Retries: st.Retries, Cert: st.Cert, Tunnel: st.Tunnel, System: st.System, Agent: st.Agent, NextCheck: st.NextCheck}
 		st.mu.Unlock()
 	}
 	return out
@@ -158,7 +169,7 @@ func (mg *Manager) StateOf(id int64) Snapshot {
 	st := mg.state(id)
 	st.mu.Lock()
 	defer st.mu.Unlock()
-	return Snapshot{Last: st.Last, Retries: st.Retries, Cert: st.Cert, Tunnel: st.Tunnel, System: st.System, NextCheck: st.NextCheck}
+	return Snapshot{Last: st.Last, Retries: st.Retries, Cert: st.Cert, Tunnel: st.Tunnel, System: st.System, Agent: st.Agent, NextCheck: st.NextCheck}
 }
 
 // Upsert (re)starts a monitor after it was created or changed.
@@ -178,6 +189,7 @@ func (mg *Manager) Remove(id int64) {
 	delete(mg.states, id)
 	delete(mg.parents, id)
 	delete(mg.types, id)
+	delete(mg.agentOf, id)
 	mg.mu.Unlock()
 	mg.pub.Publish("monitors", map[string]any{"removed": id})
 }
@@ -483,6 +495,9 @@ func (mg *Manager) process(ctx context.Context, m *store.Monitor, res Result) in
 	if res.System != nil {
 		st.System = res.System
 	}
+	if res.Agent != nil {
+		st.Agent = res.Agent
+	}
 
 	notifyStatus := important && shouldNotify(prev, status)
 	var downtime time.Duration
@@ -503,7 +518,7 @@ func (mg *Manager) process(ctx context.Context, m *store.Monitor, res Result) in
 			st.downCount = 0
 		}
 	}
-	cert, tunnel, system := st.Cert, st.Tunnel, st.System
+	cert, tunnel, system, agentInfo := st.Cert, st.Tunnel, st.System, st.Agent
 	st.mu.Unlock()
 
 	mg.pub.Publish("heartbeat", map[string]any{
@@ -512,6 +527,7 @@ func (mg *Manager) process(ctx context.Context, m *store.Monitor, res Result) in
 		"cert":      cert,
 		"tunnel":    tunnel,
 		"system":    system,
+		"agent":     agentInfo,
 	})
 
 	if notifyStatus || resend {
@@ -557,8 +573,17 @@ func Target(m *store.Monitor) string {
 		return c.Hostname
 	case TypeDocker:
 		return c.ContainerName
-	case TypeBackpackTun:
+	case TypeBackpackTun, TypeAgentTunnel:
 		return "tunnel " + c.TunnelName
+	case TypeSMTP, TypeGRPC, TypeRadius, TypeSNMP, TypeSteam, TypeUDP, TypeTLS:
+		if c.Port > 0 {
+			return fmt.Sprintf("%s:%d", c.Hostname, c.Port)
+		}
+		return c.Hostname
+	case TypeKafka, TypeMQTT:
+		return c.Hostname
+	case TypeWebSocket:
+		return c.URL
 	}
 	return ""
 }
@@ -571,6 +596,9 @@ func (mg *Manager) baseEvent(ctx context.Context, m *store.Monitor) notify.Event
 		MonitorType: m.Type,
 		Target:      Target(m),
 		SiteTitle:   mg.db.GetSetting(ctx, "siteTitle", "Neo Uptime"),
+	}
+	if tz := mg.db.GetSetting(ctx, "timezone", "auto"); tz != "auto" && tz != "" {
+		ev.TZ = tz
 	}
 	if base != "" {
 		ev.Link = base + "/dashboard/" + strconv.FormatInt(m.ID, 10)
@@ -830,7 +858,7 @@ func nonNil(v []int64) []int64 {
 // ImportTunnels creates a monitor for each tunnel of p that has none. With
 // names nil it imports every tunnel; otherwise only the named ones.
 func (mg *Manager) ImportTunnels(ctx context.Context, p *store.BackpackPanel, names []string) (int, error) {
-	snap := mg.env.Backpack.Get(ctx, p, time.Duration(max(p.Interval, 10))*time.Second)
+	snap := mg.env.Backpack.Get(ctx, PanelRef(p), time.Duration(max(p.Interval, 10))*time.Second)
 	if snap.Err != "" {
 		return 0, errors.New(snap.Err)
 	}
@@ -866,7 +894,7 @@ func (mg *Manager) ImportTunnels(ctx context.Context, p *store.BackpackPanel, na
 	for _, t := range todo {
 		desc := strings.TrimSpace(strings.Join([]string{strings.ToUpper(t.Direction), strings.ToUpper(t.Carrier), t.Preset}, " "))
 		m := &store.Monitor{
-			Name: t.Name, Type: TypeBackpackTun, ParentID: &gid, Active: true,
+			Name: t.Name, Type: TypeBackpackTun, ParentID: &gid, Active: true, Country: strings.ToLower(t.PeerCountry),
 			Interval: max(p.Interval, 20), RetryInterval: max(p.Interval, 20), MaxRetries: 1, Timeout: 25,
 			Config:          store.MonitorConfig{PanelID: p.ID, TunnelName: t.Name},
 			NotificationIDs: nonNil(notifs), Description: desc,

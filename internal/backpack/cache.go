@@ -4,9 +4,15 @@ import (
 	"context"
 	"sync"
 	"time"
-
-	"github.com/neoauroraproject/Neo-Uptime/internal/store"
 )
+
+// PanelRef is what is needed to reach a panel.
+type PanelRef struct {
+	ID        int64
+	URL       string
+	Token     string
+	IgnoreTLS bool
+}
 
 // Snapshot is what a panel last said.
 type Snapshot struct {
@@ -70,7 +76,7 @@ func (c *Cache) Forget(id int64) {
 }
 
 // Get returns a snapshot no older than maxAge, fetching when needed.
-func (c *Cache) Get(ctx context.Context, p *store.BackpackPanel, maxAge time.Duration) *Snapshot {
+func (c *Cache) Get(ctx context.Context, p PanelRef, maxAge time.Duration) *Snapshot {
 	l := c.lockFor(p.ID)
 	l.Lock()
 	defer l.Unlock()
@@ -85,7 +91,7 @@ func (c *Cache) Get(ctx context.Context, p *store.BackpackPanel, maxAge time.Dur
 }
 
 // Fetch reads a panel now, without the cache.
-func Fetch(ctx context.Context, p *store.BackpackPanel) *Snapshot {
+func Fetch(ctx context.Context, p PanelRef) *Snapshot {
 	cl := &Client{BaseURL: p.URL, Token: p.Token, IgnoreTLS: p.IgnoreTLS, Timeout: 20 * time.Second}
 	s := &Snapshot{PanelID: p.ID, FetchedAt: time.Now()}
 

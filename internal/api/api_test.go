@@ -3,6 +3,7 @@ package api
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/cookiejar"
@@ -35,12 +36,13 @@ func newHarness(t *testing.T) *harness {
 	t.Cleanup(cancel)
 	hub := NewHub()
 	bp := backpack.NewCache()
-	mgr := monitor.NewManager(db, bp, hub)
+	agents := monitor.NewAgentHub()
+	mgr := monitor.NewManager(db, bp, agents, hub)
 	if err := mgr.Start(ctx); err != nil {
 		t.Fatal(err)
 	}
 	static := fstest.MapFS{"index.html": {Data: []byte("<!doctype html><title>app</title>")}}
-	srv := httptest.NewServer(New(db, mgr, bp, hub, static, t.TempDir()))
+	srv := httptest.NewServer(New(db, mgr, bp, agents, hub, static, t.TempDir()))
 	t.Cleanup(srv.Close)
 	jar, _ := cookiejar.New(nil)
 	return &harness{t: t, srv: srv, client: &http.Client{Jar: jar, Timeout: 10 * time.Second}}
@@ -148,5 +150,134 @@ func TestAPIKeyScopes(t *testing.T) {
 	}
 	if c := call("GET", "/api/users"); c != 403 {
 		t.Fatalf("API key on an admin endpoint: %d", c)
+	}
+}
+
+func TestAgentReportAndStatusAPI(t *testing.T) {
+	h := newHarness(t)
+	h.do("POST", "/api/auth/setup", `{"username":"admin","password":"long-enough-pw"}`, true)
+
+	code, out := h.do("POST", "/api/agents", `{"name":"Iran edge","country":"IR","interval":10}`, true)
+	if code != 200 {
+		t.Fatalf("create agent: %d %v", code, out)
+	}
+	token := out["token"].(string)
+	if !strings.Contains(out["install"].(string), token) {
+		t.Fatalf("install command lacks the token: %v", out["install"])
+	}
+
+	report := `{"format":1,"agentVersion":"test","interval":10,"system":{"hostname":"edge","cpuPercent":12,"memTotal":1000,"memUsed":400},
+"backpack":{"installed":true,"mode":"files","tunnels":[{"name":"de2","source":"backpack","state":"online","ping":90,"carrier":"wssmux","direction":"reverse","peerCountry":"DE"}]},
+"kariz":{"installed":true,"mode":"socket","tunnels":[{"name":"main","source":"kariz","state":"offline","ping":-1,"carrier":"tcpmux","direction":"reverse","lastError":"refused"}]}}`
+	post := func(tok string) int {
+		req, _ := http.NewRequest("POST", h.srv.URL+"/api/agent/report", strings.NewReader(report))
+		req.Header.Set("Authorization", "Bearer "+tok)
+		resp, err := http.DefaultClient.Do(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		resp.Body.Close()
+		return resp.StatusCode
+	}
+	if c := post("na_wrong"); c != 401 {
+		t.Fatalf("wrong agent token: %d", c)
+	}
+	if c := post(token); c != 200 {
+		t.Fatalf("report: %d", c)
+	}
+
+	// Auto-import runs in the background; wait for the three monitors.
+	var mons []any
+	for i := 0; i < 50; i++ {
+		_, out = h.do("GET", "/api/dashboard", "", false)
+		mons, _ = out["monitors"].([]any)
+		if len(mons) >= 4 { // group + server + 2 tunnels
+			break
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
+	types := map[string]int{}
+	var de2 map[string]any
+	for _, m := range mons {
+		mm := m.(map[string]any)
+		types[mm["type"].(string)]++
+		if mm["name"] == "de2" {
+			de2 = mm
+		}
+	}
+	if types["group"] != 1 || types["agent"] != 1 || types["agent-tunnel"] != 2 {
+		t.Fatalf("imported monitors: %v", types)
+	}
+	if de2 == nil || de2["country"] != "de" {
+		t.Fatalf("tunnel country should come from the peer: %v", de2)
+	}
+
+	// Private status API.
+	ids := []string{}
+	for _, m := range mons {
+		mm := m.(map[string]any)
+		if mm["type"] == "agent-tunnel" {
+			ids = append(ids, fmt.Sprintf(`{"monitorId":%v}`, mm["id"]))
+		}
+	}
+	code, out = h.do("POST", "/api/status-pages", `{"title":"Net","slug":"net","groups":[{"name":"Tunnels","monitors":[`+strings.Join(ids, ",")+`]}]}`, true)
+	if code != 200 {
+		t.Fatalf("status page: %d %v", code, out)
+	}
+	pageID := out["id"]
+	code, out = h.do("POST", "/api/status-api-keys", fmt.Sprintf(`{"name":"site","statusPageId":%v,"allowedOrigins":"https://example.com"}`, pageID), true)
+	if code != 200 {
+		t.Fatalf("status key: %d %v", code, out)
+	}
+	secret := out["secret"].(string)
+
+	get := func(key, origin string) (int, map[string]any) {
+		req, _ := http.NewRequest("GET", h.srv.URL+"/api/v1/status/net", nil)
+		if key != "" {
+			req.Header.Set("Authorization", "Bearer "+key)
+		}
+		if origin != "" {
+			req.Header.Set("Origin", origin)
+		}
+		resp, err := http.DefaultClient.Do(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer resp.Body.Close()
+		var body map[string]any
+		_ = json.NewDecoder(resp.Body).Decode(&body)
+		return resp.StatusCode, body
+	}
+	if c, _ := get("", ""); c != 401 {
+		t.Fatalf("status API without key: %d", c)
+	}
+	if c, _ := get(secret, "https://evil.example"); c != 403 {
+		t.Fatalf("status API from a foreign origin: %d", c)
+	}
+	c, body := get(secret, "https://example.com")
+	if c != 200 || body["overall"] == nil {
+		t.Fatalf("status API: %d %v", c, body)
+	}
+	groups := body["groups"].([]any)
+	if len(groups) != 1 || len(groups[0].(map[string]any)["monitors"].([]any)) != 2 {
+		t.Fatalf("status API groups: %v", groups)
+	}
+}
+
+func TestOwnerOnlyStatusKeys(t *testing.T) {
+	h := newHarness(t)
+	h.do("POST", "/api/auth/setup", `{"username":"admin","password":"long-enough-pw"}`, true)
+	if code, out := h.do("POST", "/api/users", `{"username":"second","password":"long-enough-pw","role":"admin"}`, true); code != 200 {
+		t.Fatalf("create admin: %d %v", code, out)
+	}
+	h.do("POST", "/api/auth/logout", "", true)
+	if code, _ := h.do("POST", "/api/auth/login", `{"username":"second","password":"long-enough-pw"}`, true); code != 200 {
+		t.Fatalf("login second admin: %d", code)
+	}
+	if code, _ := h.do("GET", "/api/status-api-keys", "", false); code != 403 {
+		t.Fatalf("a non-owner admin listed status keys: %d", code)
+	}
+	if code, _ := h.do("GET", "/api/users", "", false); code != 200 {
+		t.Fatalf("admin endpoints should still work: %d", code)
 	}
 }

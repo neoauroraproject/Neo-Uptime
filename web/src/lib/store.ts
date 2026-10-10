@@ -1,7 +1,7 @@
 import { create } from 'zustand'
 import { api } from './api'
 import { setTimezone } from './format'
-import type { BackpackPanel, CertInfo, Heartbeat, MonitorView, Notification, PanelSystem, Tag, Tunnel, User } from './types'
+import type { Agent, AgentInfo, BackpackPanel, CertInfo, Heartbeat, MonitorView, Notification, PanelSystem, Tag, Tunnel, User } from './types'
 
 const MAX_BEATS = 120
 
@@ -25,6 +25,7 @@ interface AppState {
   tags: Tag[]
   notifications: Notification[]
   panels: BackpackPanel[]
+  agents: Agent[]
 
   setMe: (u: User | null, version?: string) => void
   loadDashboard: () => Promise<void>
@@ -32,7 +33,8 @@ interface AppState {
   loadTags: () => Promise<void>
   loadNotifications: () => Promise<void>
   loadPanels: () => Promise<void>
-  applyHeartbeat: (e: { monitorId: number; heartbeat: Heartbeat; cert?: CertInfo; tunnel?: Tunnel; system?: PanelSystem }) => void
+  loadAgents: () => Promise<void>
+  applyHeartbeat: (e: { monitorId: number; heartbeat: Heartbeat; cert?: CertInfo; tunnel?: Tunnel; system?: PanelSystem; agent?: AgentInfo }) => void
   setLive: (s: AppState['live']) => void
   removeMonitor: (id: number) => void
 }
@@ -50,6 +52,7 @@ export const useApp = create<AppState>((set, get) => ({
   tags: [],
   notifications: [],
   panels: [],
+  agents: [],
 
   setMe: (u, version) => set({ me: u, role: u?.role ?? 'viewer', ...(version ? { version } : {}) }),
 
@@ -72,8 +75,9 @@ export const useApp = create<AppState>((set, get) => ({
   loadTags: async () => set({ tags: await api.get<Tag[]>('/api/tags') }),
   loadNotifications: async () => set({ notifications: await api.get<Notification[]>('/api/notifications') }),
   loadPanels: async () => set({ panels: await api.get<BackpackPanel[]>('/api/backpack/panels') }),
+  loadAgents: async () => set({ agents: await api.get<Agent[]>('/api/agents') }),
 
-  applyHeartbeat: ({ monitorId, heartbeat, cert, tunnel, system }) => {
+  applyHeartbeat: ({ monitorId, heartbeat, cert, tunnel, system, agent }) => {
     const { monitors, beats, lastBeatAt } = get()
     const m = monitors[monitorId]
     const list = (beats[monitorId] ?? []).concat(heartbeat)
@@ -90,6 +94,7 @@ export const useApp = create<AppState>((set, get) => ({
               cert: cert ?? m.cert,
               tunnel: tunnel ?? m.tunnel,
               system: system ?? m.system,
+              agent: agent ?? m.agent,
               maintenance: heartbeat.status === 3,
             },
           }

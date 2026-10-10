@@ -27,6 +27,7 @@ type Server struct {
 	db      *store.DB
 	mgr     *monitor.Manager
 	bp      *backpack.Cache
+	agents  *monitor.AgentHub
 	hub     *Hub
 	static  fs.FS
 	limiter *auth.Limiter
@@ -36,9 +37,9 @@ type Server struct {
 }
 
 // New builds the server. static is the built web app.
-func New(db *store.DB, mgr *monitor.Manager, bp *backpack.Cache, hub *Hub, static fs.FS, dataDir string) *Server {
+func New(db *store.DB, mgr *monitor.Manager, bp *backpack.Cache, agents *monitor.AgentHub, hub *Hub, static fs.FS, dataDir string) *Server {
 	s := &Server{
-		db: db, mgr: mgr, bp: bp, hub: hub, static: static,
+		db: db, mgr: mgr, bp: bp, agents: agents, hub: hub, static: static,
 		limiter: auth.NewLimiter(8, 15*time.Minute),
 		started: time.Now(),
 		mux:     http.NewServeMux(),
@@ -63,6 +64,9 @@ func (s *Server) routes() {
 	m.HandleFunc("GET /api/badge/{id}/{kind}", s.handleBadge)
 	m.HandleFunc("GET /metrics", s.need(roleViewer, s.handleMetrics))
 	m.HandleFunc("GET /robots.txt", s.handleRobots)
+	m.HandleFunc("POST /api/agent/report", s.handleAgentReport)
+	m.HandleFunc("GET /api/v1/status/{slug}", s.handleStatusV1)
+	m.HandleFunc("OPTIONS /api/v1/status/{slug}", s.handleStatusV1)
 
 	// signed in — viewer
 	m.HandleFunc("GET /api/me", s.need(roleViewer, s.handleMe))
@@ -84,6 +88,8 @@ func (s *Server) routes() {
 	m.HandleFunc("GET /api/backpack/panels", s.need(roleViewer, s.handleListPanels))
 	m.HandleFunc("GET /api/backpack/panels/{id}/snapshot", s.need(roleViewer, s.handlePanelSnapshot))
 	m.HandleFunc("GET /api/settings/public", s.need(roleViewer, s.handlePublicSettings))
+	m.HandleFunc("GET /api/agents", s.need(roleViewer, s.handleListAgents))
+	m.HandleFunc("GET /api/agents/{id}", s.need(roleViewer, s.handleGetAgent))
 
 	// own account — any signed-in browser user
 	m.HandleFunc("PUT /api/me/password", s.session(s.handleChangePassword))
@@ -127,6 +133,8 @@ func (s *Server) routes() {
 	m.HandleFunc("PUT /api/backpack/panels/{id}", s.need(roleEditor, s.handleSavePanel))
 	m.HandleFunc("DELETE /api/backpack/panels/{id}", s.need(roleEditor, s.handleDeletePanel))
 	m.HandleFunc("POST /api/backpack/panels/{id}/import", s.need(roleEditor, s.handleImportTunnels))
+	m.HandleFunc("POST /api/agents/{id}/import", s.need(roleEditor, s.handleImportAgentTunnels))
+	m.HandleFunc("POST /api/notifications/telegram/chats", s.need(roleEditor, s.handleTelegramChats))
 
 	// admin, browser session only
 	m.HandleFunc("GET /api/settings", s.admin(s.handleGetSettings))
@@ -144,6 +152,16 @@ func (s *Server) routes() {
 	m.HandleFunc("DELETE /api/api-keys/{id}", s.admin(s.handleDeleteAPIKey))
 	m.HandleFunc("GET /api/backup", s.admin(s.handleExport))
 	m.HandleFunc("POST /api/backup/import", s.admin(s.handleImport))
+	m.HandleFunc("POST /api/agents", s.admin(s.handleSaveAgent))
+	m.HandleFunc("PUT /api/agents/{id}", s.admin(s.handleSaveAgent))
+	m.HandleFunc("DELETE /api/agents/{id}", s.admin(s.handleDeleteAgent))
+	m.HandleFunc("POST /api/agents/{id}/token", s.admin(s.handleAgentToken))
+
+	// owner only
+	m.HandleFunc("GET /api/status-api-keys", s.owner(s.handleListStatusKeys))
+	m.HandleFunc("POST /api/status-api-keys", s.owner(s.handleSaveStatusKey))
+	m.HandleFunc("PUT /api/status-api-keys/{id}", s.owner(s.handleSaveStatusKey))
+	m.HandleFunc("DELETE /api/status-api-keys/{id}", s.owner(s.handleDeleteStatusKey))
 
 	m.HandleFunc("/", s.handleStatic)
 }
@@ -162,7 +180,7 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	h.Set("Permissions-Policy", "camera=(), microphone=(), geolocation=()")
 	csp := "default-src 'self'; img-src 'self' data: https: http:; style-src 'self' 'unsafe-inline'; " +
 		"script-src 'self'; connect-src 'self'; font-src 'self' data:; object-src 'none'; base-uri 'self'"
-	if strings.HasPrefix(r.URL.Path, "/status/") || strings.HasPrefix(r.URL.Path, "/api/badge/") {
+	if strings.HasPrefix(r.URL.Path, "/status/") || strings.HasPrefix(r.URL.Path, "/api/badge/") || strings.HasPrefix(r.URL.Path, "/embed") {
 		// Status pages and badges are made to be embedded elsewhere.
 		h.Set("Content-Security-Policy", csp)
 	} else {

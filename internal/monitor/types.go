@@ -26,13 +26,29 @@ const (
 	TypeRedis        = "redis"
 	TypeBackpackTun  = "backpack-tunnel"
 	TypeBackpackHost = "backpack-panel"
+	TypeAgent        = "agent"
+	TypeAgentTunnel  = "agent-tunnel"
+	TypeSMTP         = "smtp"
+	TypeMongo        = "mongodb"
+	TypeMSSQL        = "mssql"
+	TypeMQTT         = "mqtt"
+	TypeGRPC         = "grpc"
+	TypeRadius       = "radius"
+	TypeSNMP         = "snmp"
+	TypeSteam        = "steam"
+	TypeKafka        = "kafka"
+	TypeUDP          = "udp"
+	TypeWebSocket    = "websocket"
+	TypeTLS          = "tls"
 )
 
 // KnownType reports whether t is a monitor type this build can run.
 func KnownType(t string) bool {
 	switch t {
 	case TypeHTTP, TypeKeyword, TypeJSONQuery, TypeTCP, TypePing, TypeDNS, TypePush, TypeGroup,
-		TypeDocker, TypePostgres, TypeMySQL, TypeRedis, TypeBackpackTun, TypeBackpackHost:
+		TypeDocker, TypePostgres, TypeMySQL, TypeRedis, TypeBackpackTun, TypeBackpackHost,
+		TypeAgent, TypeAgentTunnel, TypeSMTP, TypeMongo, TypeMSSQL, TypeMQTT, TypeGRPC, TypeRadius,
+		TypeSNMP, TypeSteam, TypeKafka, TypeUDP, TypeWebSocket, TypeTLS:
 		return true
 	}
 	return false
@@ -59,6 +75,7 @@ type Result struct {
 	Cert     *CertInfo
 	Tunnel   *backpack.Tunnel
 	System   *backpack.System
+	Agent    *AgentInfo
 }
 
 func up(msg string, ping time.Duration) Result {
@@ -77,6 +94,7 @@ func ms(d time.Duration) *float64 {
 type Env struct {
 	DB       *store.DB
 	Backpack *backpack.Cache
+	Agents   *AgentHub
 }
 
 // Checker runs one check.
@@ -95,4 +113,18 @@ var checkers = map[string]Checker{
 	TypeRedis:        checkRedis,
 	TypeBackpackTun:  checkBackpackTunnel,
 	TypeBackpackHost: checkBackpackPanel,
+	TypeAgent:        checkAgent,
+	TypeAgentTunnel:  checkAgentTunnel,
+	TypeSMTP:         checkSMTP,
+	TypeMongo:        checkMongo,
+	TypeMSSQL:        checkMSSQL,
+	TypeMQTT:         checkMQTT,
+	TypeGRPC:         checkGRPC,
+	TypeRadius:       checkRadius,
+	TypeSNMP:         checkSNMP,
+	TypeSteam:        checkSteam,
+	TypeKafka:        checkKafka,
+	TypeUDP:          checkUDP,
+	TypeWebSocket:    checkWebSocket,
+	TypeTLS:          checkTLS,
 }

@@ -5,7 +5,8 @@ import {
 } from 'react'
 import { createPortal } from 'react-dom'
 import { Check, ChevronDown, CircleCheck, CircleX, Copy, Info, LoaderCircle, TriangleAlert, X } from 'lucide-react'
-import { clsx, statusKey } from '../lib/format'
+import { clsx, n, statusKey } from '../lib/format'
+import { t as tr, useT } from '../lib/i18n'
 import type { Status } from '../lib/types'
 
 /* ---------- Button ---------- */
@@ -87,10 +88,10 @@ export const Textarea = forwardRef<HTMLTextAreaElement, TextareaHTMLAttributes<H
 export function Select({ className, children, ...rest }: SelectHTMLAttributes<HTMLSelectElement>) {
   return (
     <div className={clsx('relative', className)}>
-      <select className={clsx(control, 'h-10 appearance-none pr-9 cursor-pointer')} {...rest}>
+      <select className={clsx(control, 'h-10 appearance-none pe-9 cursor-pointer')} {...rest}>
         {children}
       </select>
-      <ChevronDown className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 size-4 text-muted" aria-hidden />
+      <ChevronDown className="pointer-events-none absolute end-3 top-1/2 -translate-y-1/2 size-4 text-muted" aria-hidden />
     </div>
   )
 }
@@ -115,7 +116,7 @@ export function Switch({ checked, onChange, label, description, disabled, id }: 
           disabled && 'opacity-50',
         )}
       >
-        <span className={clsx('inline-block size-4.5 rounded-full shadow transition-transform duration-200', checked ? 'translate-x-[18px] bg-on-accent' : 'translate-x-[3px] bg-muted')} />
+        <span className={clsx('inline-block size-4.5 rounded-full shadow transition-transform duration-200', checked ? 'translate-x-[18px] rtl:-translate-x-[18px] bg-on-accent' : 'translate-x-[3px] rtl:-translate-x-[3px] bg-muted')} />
       </button>
       {(label || description) && (
         <label htmlFor={sid} className="min-w-0 cursor-pointer select-none">
@@ -153,7 +154,7 @@ export function Field({ label, help, error, children, required, htmlFor, classNa
         <div className="flex items-center justify-between gap-2">
           <label htmlFor={htmlFor} className="text-[13px] font-medium text-fg">
             {label}
-            {required && <span className="text-down ml-0.5" aria-hidden>*</span>}
+            {required && <span className="text-down ms-0.5" aria-hidden>*</span>}
           </label>
           {aside}
         </div>
@@ -239,7 +240,7 @@ export function TagChip({ name, color, value }: { name: string; color: string; v
   )
 }
 
-const statusText = { up: 'Up', down: 'Down', pending: 'Pending', maint: 'Maintenance', paused: 'Paused', empty: 'No data' }
+const statusText = () => ({ up: tr('Up'), down: tr('Down'), pending: tr('Pending'), maint: tr('Maintenance'), paused: tr('Paused'), empty: tr('No data') })
 const statusBg = { up: 'bg-up', down: 'bg-down', pending: 'bg-pending', maint: 'bg-maint', paused: 'bg-paused', empty: 'bg-subtle' }
 const statusFg = { up: 'text-up', down: 'text-down', pending: 'text-pending', maint: 'text-maint', paused: 'text-muted', empty: 'text-muted' }
 
@@ -251,6 +252,7 @@ export function StatusDot({ status, active = true, live, className }: { status: 
 }
 
 export function StatusPill({ status, active = true, size = 'md' }: { status: Status | null | undefined; active?: boolean; size?: 'sm' | 'md' | 'lg' }) {
+  useT()
   const k = statusKey(status, active)
   return (
     <span
@@ -264,13 +266,13 @@ export function StatusPill({ status, active = true, size = 'md' }: { status: Sta
       )}
     >
       <StatusDot status={status} active={active} live={size !== 'sm'} />
-      {statusText[k]}
+      {statusText()[k]}
     </span>
   )
 }
 
 export function Spinner({ className }: { className?: string }) {
-  return <LoaderCircle className={clsx('animate-spin text-muted', className ?? 'size-5')} aria-label="Loading" />
+  return <LoaderCircle className={clsx('animate-spin text-muted', className ?? 'size-5')} aria-label={tr('Loading')} />
 }
 
 export function Skeleton({ className }: { className?: string }) {
@@ -292,7 +294,8 @@ export function Kbd({ children }: { children: ReactNode }) {
   return <kbd className="inline-flex items-center h-5 px-1.5 rounded-md border border-line-strong bg-surface-2 text-[11px] font-mono text-muted">{children}</kbd>
 }
 
-export function CopyButton({ text, label = 'Copy', className, variant = 'secondary' }: { text: string; label?: string; className?: string; variant?: Variant }) {
+export function CopyButton({ text, label, className, variant = 'secondary' }: { text: string; label?: string; className?: string; variant?: Variant }) {
+  const t = useT()
   const [done, setDone] = useState(false)
   return (
     <Button
@@ -316,7 +319,7 @@ export function CopyButton({ text, label = 'Copy', className, variant = 'seconda
         setTimeout(() => setDone(false), 1600)
       }}
     >
-      {done ? 'Copied' : label}
+      {done ? t('Copied') : label ?? t('Copy')}
     </Button>
   )
 }
@@ -329,7 +332,7 @@ export function Pagination({ page, pages, onPage }: { page: number; pages: numbe
     else if (items[items.length - 1] !== '…') items.push('…')
   }
   return (
-    <nav aria-label="Pagination" className="flex items-center gap-1">
+    <nav aria-label={tr('Pagination')} className="flex items-center gap-1" dir="ltr">
       {items.map((it, i) =>
         it === '…' ? (
           <span key={`e${i}`} className="px-1 text-subtle">…</span>
@@ -340,7 +343,7 @@ export function Pagination({ page, pages, onPage }: { page: number; pages: numbe
             aria-current={it === page ? 'page' : undefined}
             className={clsx('min-w-8 h-8 px-2 rounded-lg text-[13px] tnum font-medium transition-colors', it === page ? 'bg-accent text-on-accent' : 'text-muted hover:bg-surface-2 hover:text-fg')}
           >
-            {it}
+            {n(it)}
           </button>
         ),
       )}
@@ -401,7 +404,7 @@ export function Modal({ open, onClose, title, description, children, footer, siz
             <h2 id={titleId} className="font-display text-lg font-semibold">{title}</h2>
             {description && <p className="text-[13px] text-muted mt-1">{description}</p>}
           </div>
-          <IconButton label="Close" size="sm" onClick={onClose} className="-mr-2 -mt-1">
+          <IconButton label={tr('Close')} size="sm" onClick={onClose} className="-me-2 -mt-1">
             <X className="size-4" />
           </IconButton>
         </div>
@@ -436,8 +439,8 @@ export function ConfirmHost() {
       size="sm"
       footer={
         <>
-          <Button variant="ghost" onClick={() => done(false)}>Cancel</Button>
-          <Button data-autofocus variant={req?.danger ? 'danger' : 'primary'} onClick={() => done(true)}>{req?.confirmLabel ?? 'Confirm'}</Button>
+          <Button variant="ghost" onClick={() => done(false)}>{tr('Cancel')}</Button>
+          <Button data-autofocus variant={req?.danger ? 'danger' : 'primary'} onClick={() => done(true)}>{req?.confirmLabel ?? tr('Confirm')}</Button>
         </>
       }
     >
@@ -468,7 +471,7 @@ export const toast = {
 export function Toaster() {
   const { list, drop } = useToasts()
   return createPortal(
-    <div className="fixed z-[60] bottom-4 right-4 left-4 sm:left-auto flex flex-col gap-2 sm:w-96" aria-live="polite">
+    <div className="fixed z-[60] bottom-4 end-4 start-4 sm:start-auto flex flex-col gap-2 sm:w-96" aria-live="polite">
       {list.map((t) => (
         <div key={t.id} className="fade-up flex items-start gap-3 rounded-2xl border border-line-strong bg-surface px-4 py-3 shadow-[var(--shadow-pop)]">
           {t.kind === 'success' ? <CircleCheck className="size-5 text-up shrink-0 mt-0.5" /> : t.kind === 'error' ? <CircleX className="size-5 text-down shrink-0 mt-0.5" /> : <Info className="size-5 text-maint shrink-0 mt-0.5" />}
@@ -476,7 +479,7 @@ export function Toaster() {
             <p className="text-sm font-medium">{t.title}</p>
             {t.body && <p className="text-[13px] text-muted mt-0.5 break-words">{t.body}</p>}
           </div>
-          <button aria-label="Dismiss" onClick={() => drop(t.id)} className="text-subtle hover:text-fg">
+          <button aria-label={tr('Dismiss')} onClick={() => drop(t.id)} className="text-subtle hover:text-fg">
             <X className="size-4" />
           </button>
         </div>
@@ -508,7 +511,7 @@ export function Menu({ trigger, items, align = 'end' }: { trigger: (p: { onClick
     <div ref={ref} className="relative inline-block">
       {trigger({ onClick: () => setOpen((o) => !o), 'aria-expanded': open })}
       {open && (
-        <div role="menu" className={clsx('absolute z-40 mt-2 min-w-48 rounded-2xl border border-line-strong bg-surface p-1.5 shadow-[var(--shadow-pop)] fade-up', align === 'end' ? 'right-0' : 'left-0')}>
+        <div role="menu" className={clsx('absolute z-40 mt-2 min-w-48 rounded-2xl border border-line-strong bg-surface p-1.5 shadow-[var(--shadow-pop)] fade-up', align === 'end' ? 'end-0' : 'start-0')}>
           {items.map((it, i) =>
             it.divider ? (
               <div key={i} className="my-1 h-px bg-line" />
@@ -522,7 +525,7 @@ export function Menu({ trigger, items, align = 'end' }: { trigger: (p: { onClick
                   it.onClick?.()
                 }}
                 className={clsx(
-                  'flex w-full items-center gap-2.5 rounded-xl px-3 h-9 text-sm text-left transition-colors disabled:opacity-40',
+                  'flex w-full items-center gap-2.5 rounded-xl px-3 h-9 text-sm text-start transition-colors disabled:opacity-40',
                   it.danger ? 'text-down hover:bg-down/10' : 'text-fg hover:bg-surface-2',
                 )}
               >

@@ -11,6 +11,7 @@ web:
 
 build:
 	CGO_ENABLED=0 $(GO) build -trimpath -ldflags "$(LDFLAGS)" -o neo-uptime ./cmd/neo-uptime
+	CGO_ENABLED=0 $(GO) build -trimpath -ldflags "$(LDFLAGS)" -o neo-uptime-agent ./cmd/neo-uptime-agent
 
 test:
 	$(GO) vet ./...
@@ -23,6 +24,8 @@ linux: web
 	  arch=$$t; goarm=; [ $$t = armv7 ] && arch=arm && goarm=7; \
 	  CGO_ENABLED=0 GOOS=linux GOARCH=$$arch GOARM=$$goarm $(GO) build -trimpath -ldflags "$(LDFLAGS)" -o dist/neo-uptime ./cmd/neo-uptime && \
 	  tar -czf dist/neo-uptime-linux-$$t.tar.gz -C dist neo-uptime -C .. README.md LICENSE && rm dist/neo-uptime; \
+	  CGO_ENABLED=0 GOOS=linux GOARCH=$$arch GOARM=$$goarm $(GO) build -trimpath -ldflags "$(LDFLAGS)" -o dist/neo-uptime-agent ./cmd/neo-uptime-agent && \
+	  tar -czf dist/neo-uptime-agent-linux-$$t.tar.gz -C dist neo-uptime-agent -C .. LICENSE agent.sh && rm dist/neo-uptime-agent; \
 	done
 	cd dist && sha256sum *.tar.gz > checksums.txt
 

@@ -16,7 +16,7 @@ import (
 
 var slugRe = regexp.MustCompile(`^[a-z0-9][a-z0-9-]{0,62}$`)
 
-var themes = []string{"aurora", "clarity", "lime", "noir"}
+var themes = []string{"zen", "aurora", "clarity", "lime", "noir"}
 var layouts = []string{"list", "cards"}
 
 // ---------- admin ----------
@@ -75,7 +75,10 @@ func (s *Server) handleSaveStatusPage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if !slices.Contains(themes, p.Theme) {
-		p.Theme = "aurora"
+		p.Theme = "zen"
+	}
+	if p.Language != "en" && p.Language != "fa" {
+		p.Language = "auto"
 	}
 	if !slices.Contains(layouts, p.Layout) {
 		p.Layout = "list"
@@ -200,6 +203,7 @@ type publicBeat struct {
 }
 
 type publicTunnel struct {
+	Source       string               `json:"source,omitempty"`
 	State        string               `json:"state"`
 	Direction    string               `json:"direction"`
 	Carrier      string               `json:"carrier"`
@@ -219,6 +223,7 @@ type publicMonitor struct {
 	ID       int64              `json:"id"`
 	Name     string             `json:"name"`
 	Type     string             `json:"type"`
+	Country  string             `json:"country,omitempty"`
 	URL      string             `json:"url,omitempty"`
 	Tags     []store.MonitorTag `json:"tags,omitempty"`
 	Status   int                `json:"status"` // -1 = no data, -2 = paused
@@ -339,7 +344,7 @@ func (s *Server) handlePublicStatusPage(w http.ResponseWriter, r *http.Request) 
 				continue
 			}
 			st := states[m.ID]
-			pm := publicMonitor{ID: m.ID, Name: m.Name, Type: m.Type, Status: -1, Uptime24: -1, Uptime30: -1, AvgPing: -1, Beats: []publicBeat{}}
+			pm := publicMonitor{ID: m.ID, Name: m.Name, Type: m.Type, Country: m.Country, Status: -1, Uptime24: -1, Uptime30: -1, AvgPing: -1, Beats: []publicBeat{}}
 			if ref.ShowURL {
 				pm.URL = monitor.Target(m)
 			}
@@ -365,7 +370,7 @@ func (s *Server) handlePublicStatusPage(w http.ResponseWriter, r *http.Request) 
 			}
 			if t := st.Tunnel; t != nil {
 				pm.Tunnel = &publicTunnel{
-					State: t.State, Direction: t.Direction, Carrier: t.Carrier, Preset: t.Preset,
+					Source: t.Source, State: t.State, Direction: t.Direction, Carrier: t.Carrier, Preset: t.Preset,
 					TunnelPort: t.TunnelPort, Uptime: t.Uptime, InBytes: t.InBytes, OutBytes: t.OutBytes,
 					TotalBytes: t.TotalBytes, PeerCountry: t.PeerCountry, PeerLocation: t.PeerLocation,
 					KCPLoss: t.KCPLossPercent, Rates: t.Rates,
@@ -443,7 +448,8 @@ func (s *Server) handlePublicStatusPage(w http.ResponseWriter, r *http.Request) 
 		"barMode": p.BarMode, "accentColor": p.AccentColor, "logo": p.Logo, "footer": p.Footer,
 		"customCss": p.CustomCSS, "showTags": p.ShowTags, "showCertExpiry": p.ShowCertExpiry,
 		"showPoweredBy": p.ShowPoweredBy, "showCharts": p.ShowCharts, "refreshInterval": p.RefreshInterval,
-		"published": p.Published,
+		"published": p.Published, "language": p.Language, "showUptime": p.ShowUptime,
+		"showLatency": p.ShowLatency, "showBanner": p.ShowBanner,
 	}
 	body, err := json.Marshal(map[string]any{
 		"page": page, "groups": groups, "overall": overall, "incidents": incidents,

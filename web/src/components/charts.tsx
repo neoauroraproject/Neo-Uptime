@@ -1,6 +1,7 @@
 import { useId, useMemo, useState, type ReactNode } from 'react'
 import { createPortal } from 'react-dom'
-import { clsx, fmtDate, fmtDateTime, fmtTime, ms, pct, statusKey, statusName } from '../lib/format'
+import { clsx, fmtDate, fmtDateTime, fmtTime, ms, n, pct, statusKey, statusName } from '../lib/format'
+import { t } from '../lib/i18n'
 import type { ChartPoint, Heartbeat, Status } from '../lib/types'
 import { useMeasure } from './ui'
 
@@ -41,7 +42,7 @@ export function HeartbeatBar({ beats, height = 28, barWidth = 6, gap = 3, maxBea
   const shown = beats.slice(-count)
   const pad = Math.max(0, count - shown.length)
   return (
-    <div className={className}>
+    <div className={className} dir="ltr">
       <div ref={ref} className="flex items-end justify-end w-full overflow-hidden" style={{ height, gap }} onMouseLeave={() => setTip(null)}>
         {w > 0 && Array.from({ length: pad }).map((_, i) => (
           <span key={`p${i}`} className="shrink-0 rounded-full" style={{ width: barWidth, height: '100%', background: barColor.empty, opacity: 0.6 }} />
@@ -64,7 +65,7 @@ export function HeartbeatBar({ beats, height = 28, barWidth = 6, gap = 3, maxBea
                       <div className="font-medium text-fg">{fmtDateTime(b.time)}</div>
                       <div className="flex items-center gap-2 text-muted">
                         <span className="size-2 rounded-full" style={{ background: barColor[k] }} />
-                        {statusName[b.status]}
+                        {statusName(b.status)}
                         {b.ping != null && <span className="tnum">· {ms(b.ping)}</span>}
                       </div>
                       {b.msg && <div className="text-muted max-w-72 truncate">{b.msg}</div>}
@@ -100,7 +101,7 @@ export function DayBars({ days, count = 90, height = 30, className }: { days: Da
   const today = Math.floor(Date.now() / 86400000)
   const slots = Array.from({ length: fit }, (_, i) => today - (fit - 1 - i))
   return (
-    <div className={className}>
+    <div className={className} dir="ltr">
       <div ref={ref} className="flex items-end w-full" style={{ height, gap }} onMouseLeave={() => setTip(null)}>
         {w > 0 && slots.map((day) => {
           const d = byDay.get(day)
@@ -119,8 +120,8 @@ export function DayBars({ days, count = 90, height = 30, className }: { days: Da
                   content: (
                     <div className="space-y-0.5">
                       <div className="font-medium text-fg">{fmtDate(day * 86400000)}</div>
-                      <div className="text-muted">{ratio < 0 ? 'No data' : `${pct(ratio)} uptime`}{d?.down ? ` · ${d.down} failed checks` : ''}</div>
-                      {d?.avg != null && <div className="text-muted tnum">avg {ms(d.avg)}</div>}
+                      <div className="text-muted">{ratio < 0 ? t('No data') : t('{p} uptime', { p: pct(ratio) })}{d?.down ? ` · ${t('{n} failed checks', { n: d.down })}` : ''}</div>
+                      {d?.avg != null && <div className="text-muted tnum">{t('avg {v}', { v: ms(d.avg) })}</div>}
                     </div>
                   ),
                 })
@@ -144,7 +145,7 @@ function niceMax(v: number) {
   return m * p
 }
 
-export function AreaChart({ points, height = 220, color = 'var(--chart)', rangeMs, emptyText = 'No data in this range yet', compact, variant = 'area' }: {
+export function AreaChart({ points, height = 220, color = 'var(--chart)', rangeMs, emptyText, compact, variant = 'area' }: {
   points: ChartPoint[]; height?: number; color?: string; rangeMs?: number; emptyText?: string; compact?: boolean; variant?: 'area' | 'line'
 }) {
   const [ref, w] = useMeasure<HTMLDivElement>()
@@ -202,12 +203,13 @@ export function AreaChart({ points, height = 220, color = 'var(--chart)', rangeM
 
   const hp = hover != null ? points[hover] : null
   const longRange = (rangeMs ?? 0) > 36 * 3600 * 1000
-  const summary = model?.avg != null ? `Response time: average ${ms(model.avg)}, min ${ms(model.min)}, max ${ms(model.max)}` : emptyText
+  const empty = emptyText ?? t('No data in this range yet')
+  const summary = model?.avg != null ? t('Response time: average {a}, min {lo}, max {hi}', { a: ms(model.avg), lo: ms(model.min), hi: ms(model.max) }) : empty
 
   return (
-    <div ref={ref} className="relative w-full select-none" style={{ height }}>
+    <div ref={ref} className="relative w-full select-none" style={{ height }} dir="ltr">
       {!model ? (
-        <div className="absolute inset-0 grid place-items-center text-sm text-muted">{emptyText}</div>
+        <div className="absolute inset-0 grid place-items-center text-sm text-muted">{empty}</div>
       ) : w > 0 ? (
         <svg
           width={w}
@@ -233,10 +235,10 @@ export function AreaChart({ points, height = 220, color = 'var(--chart)', rangeM
               <stop offset="100%" stopColor={color} stopOpacity={0} />
             </linearGradient>
           </defs>
-          {!compact && model.ticks.map((t, i) => (
+          {!compact && model.ticks.map((tk, i) => (
             <g key={i}>
-              <line x1={padL} x2={padL + innerW} y1={t.y} y2={t.y} stroke="var(--border)" strokeDasharray={i === 0 ? undefined : '3 4'} />
-              <text x={padL - 8} y={t.y + 4} textAnchor="end" className="fill-[var(--text-3)] text-[11px] tnum">{Math.round(t.v)}</text>
+              <line x1={padL} x2={padL + innerW} y1={tk.y} y2={tk.y} stroke="var(--border)" strokeDasharray={i === 0 ? undefined : '3 4'} />
+              <text x={padL - 8} y={tk.y + 4} textAnchor="end" className="fill-[var(--text-3)] text-[11px] tnum">{n(Math.round(tk.v))}</text>
             </g>
           ))}
           {model.downs.map((p, i) => (
@@ -253,9 +255,9 @@ export function AreaChart({ points, height = 220, color = 'var(--chart)', rangeM
               </g>
             )
           })}
-          {!compact && model.xt.map((t, i) => (
-            <text key={i} x={t.x} y={height - 6} textAnchor={i === 0 ? 'start' : i === 4 ? 'end' : 'middle'} className="fill-[var(--text-3)] text-[11px] tnum">
-              {longRange ? fmtDate(t.t) : fmtTime(t.t)}
+          {!compact && model.xt.map((tk, i) => (
+            <text key={i} x={tk.x} y={height - 6} textAnchor={i === 0 ? 'start' : i === 4 ? 'end' : 'middle'} className="fill-[var(--text-3)] text-[11px] tnum">
+              {longRange ? fmtDate(tk.t) : fmtTime(tk.t)}
             </text>
           ))}
           {hp && (
@@ -276,7 +278,7 @@ export function AreaChart({ points, height = 220, color = 'var(--chart)', rangeM
             <span className="size-2 rounded-full" style={{ background: barColor[statusKey(hp.status)] }} />
           </div>
           <div className="text-muted tnum mt-0.5">
-            {hp.ping != null ? ms(hp.ping) : statusName[hp.status]}
+            {hp.ping != null ? ms(hp.ping) : statusName(hp.status)}
             {hp.min != null && hp.max != null && hp.max !== hp.min && <span> · {ms(hp.min)}–{ms(hp.max)}</span>}
           </div>
         </div>
@@ -329,7 +331,7 @@ export function Columns({ values, labels, highlight, height = 160, className }: 
   const max = Math.max(1, ...values)
   const [tip, setTip] = useState<Tip | null>(null)
   return (
-    <div className={className}>
+    <div className={className} dir="ltr">
       <div className="flex items-end gap-[6px] w-full" style={{ height }} onMouseLeave={() => setTip(null)}>
         {values.map((v, i) => (
           <div
@@ -356,7 +358,7 @@ export function Meter({ value, label, sub }: { value: number; label: string; sub
     <div>
       <div className="flex items-baseline justify-between text-[13px]">
         <span className="text-muted">{label}</span>
-        <span className="tnum font-medium">{value.toFixed(0)}%{sub && <span className="text-muted font-normal"> · {sub}</span>}</span>
+        <span className="tnum font-medium">{pct(value / 100, 0)}{sub && <span className="text-muted font-normal"> · {sub}</span>}</span>
       </div>
       <div className="mt-1.5 h-2 rounded-full bg-surface-3 overflow-hidden" role="meter" aria-valuenow={Math.round(value)} aria-valuemin={0} aria-valuemax={100} aria-label={label}>
         <div className="h-full rounded-full transition-[width] duration-500" style={{ width: `${Math.min(100, value)}%`, background: tone }} />

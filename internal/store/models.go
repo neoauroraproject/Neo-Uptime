@@ -17,6 +17,7 @@ type User struct {
 	Role         string `json:"role"`
 	TOTPSecret   string `json:"-"`
 	TOTPEnabled  bool   `json:"totpEnabled"`
+	IsOwner      bool   `json:"isOwner"`
 	CreatedAt    int64  `json:"createdAt"`
 	LastLogin    int64  `json:"lastLogin"`
 }
@@ -88,6 +89,23 @@ type MonitorConfig struct {
 	PanelID           int64  `json:"panelId,omitempty"`
 	TunnelName        string `json:"tunnelName,omitempty"`
 	ServiceDownIsDown bool   `json:"serviceDownIsDown,omitempty"`
+
+	// Agent server / agent tunnel (BackPack or Kariz through neo-uptime-agent).
+	AgentID int64  `json:"agentId,omitempty"`
+	Source  string `json:"source,omitempty"` // backpack | kariz
+
+	// Other protocols.
+	Username    string `json:"username,omitempty"`
+	Password    string `json:"password,omitempty"`
+	Topic       string `json:"topic,omitempty"`       // MQTT
+	Secret      string `json:"secret,omitempty"`      // RADIUS
+	Community   string `json:"community,omitempty"`   // SNMP
+	OID         string `json:"oid,omitempty"`         // SNMP
+	SNMPVersion string `json:"snmpVersion,omitempty"` // 1 | 2c
+	Service     string `json:"service,omitempty"`     // gRPC health service name
+	Security    string `json:"security,omitempty"`    // SMTP: none | starttls | tls ; gRPC: tls
+	Payload     string `json:"payload,omitempty"`     // UDP
+	WarnDays    int    `json:"warnDays,omitempty"`    // TLS certificate monitor
 }
 
 // Monitor is one thing being watched.
@@ -105,6 +123,7 @@ type Monitor struct {
 	UpsideDown      bool          `json:"upsideDown"`
 	Description     string        `json:"description"`
 	Config          MonitorConfig `json:"config"`
+	Country         string        `json:"country"`
 	PushToken       string        `json:"pushToken,omitempty"`
 	SortOrder       int           `json:"sortOrder"`
 	CreatedAt       int64         `json:"createdAt"`
@@ -173,6 +192,10 @@ type StatusPage struct {
 	ShowCharts      bool              `json:"showCharts"`
 	Published       bool              `json:"published"`
 	RefreshInterval int               `json:"refreshInterval"`
+	Language        string            `json:"language"` // auto | en | fa
+	ShowUptime      bool              `json:"showUptime"`
+	ShowLatency     bool              `json:"showLatency"`
+	ShowBanner      bool              `json:"showBanner"`
 	CreatedAt       int64             `json:"createdAt"`
 	UpdatedAt       int64             `json:"updatedAt"`
 	Groups          []StatusPageGroup `json:"groups"`
@@ -236,4 +259,35 @@ type BackpackPanel struct {
 	GroupMonitorID *int64 `json:"groupMonitorId"`
 	CreatedAt      int64  `json:"createdAt"`
 	UpdatedAt      int64  `json:"updatedAt"`
+}
+
+// Agent is a server running neo-uptime-agent.
+type Agent struct {
+	ID             int64  `json:"id"`
+	Name           string `json:"name"`
+	TokenHash      string `json:"-"`
+	TokenPrefix    string `json:"tokenPrefix"`
+	Country        string `json:"country"`
+	Interval       int    `json:"interval"`
+	AutoImport     bool   `json:"autoImport"`
+	GroupMonitorID *int64 `json:"groupMonitorId"`
+	CreatedAt      int64  `json:"createdAt"`
+	LastSeen       int64  `json:"lastSeen"`
+	LastIP         string `json:"lastIp"`
+	Version        string `json:"version"`
+	Hostname       string `json:"hostname"`
+}
+
+// StatusAPIKey grants read access to one status page's data over the private
+// status API, for showing it on another site.
+type StatusAPIKey struct {
+	ID             int64  `json:"id"`
+	Name           string `json:"name"`
+	Prefix         string `json:"prefix"`
+	KeyHash        string `json:"-"`
+	StatusPageID   int64  `json:"statusPageId"`
+	AllowedOrigins string `json:"allowedOrigins"`
+	CreatedAt      int64  `json:"createdAt"`
+	LastUsed       int64  `json:"lastUsed"`
+	Active         bool   `json:"active"`
 }

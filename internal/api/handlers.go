@@ -403,7 +403,7 @@ func (s *Server) handleTestPanel(w http.ResponseWriter, r *http.Request) {
 			token = p.Token
 		}
 	}
-	snap := backpack.Fetch(r.Context(), &store.BackpackPanel{URL: u, Token: token, IgnoreTLS: in.IgnoreTLS})
+	snap := backpack.Fetch(r.Context(), backpack.PanelRef{URL: u, Token: token, IgnoreTLS: in.IgnoreTLS})
 	if snap.Err != "" {
 		writeErr(w, http.StatusBadGateway, snap.Err)
 		return
@@ -511,7 +511,7 @@ func (s *Server) handlePanelSnapshot(w http.ResponseWriter, r *http.Request) {
 	if r.URL.Query().Get("refresh") == "1" {
 		maxAge = 0
 	}
-	snap := s.bp.Get(r.Context(), p, maxAge)
+	snap := s.bp.Get(r.Context(), monitor.PanelRef(p), maxAge)
 	imported := map[string]int64{}
 	if list, err := s.db.ListMonitors(r.Context()); err == nil {
 		for _, m := range list {
@@ -709,6 +709,14 @@ func (s *Server) handleSaveUser(w http.ResponseWriter, r *http.Request) {
 			writeErr(w, http.StatusBadRequest, "there must be at least one admin")
 			return
 		}
+		if u.IsOwner && in.Role != "admin" {
+			writeErr(w, http.StatusBadRequest, "the owner account is always an admin")
+			return
+		}
+		if u.IsOwner && !callerFrom(r).IsOwner && in.Password != "" {
+			writeErr(w, http.StatusForbidden, "only the owner can change the owner's password")
+			return
+		}
 		u.Username, u.Role = in.Username, in.Role
 		if in.Password != "" {
 			if err := auth.ValidatePassword(in.Password); err != nil {
@@ -758,6 +766,10 @@ func (s *Server) handleDeleteUser(w http.ResponseWriter, r *http.Request) {
 	}
 	if u.Role == "admin" && s.countAdmins(r.Context()) <= 1 {
 		writeErr(w, http.StatusBadRequest, "there must be at least one admin")
+		return
+	}
+	if u.IsOwner {
+		writeErr(w, http.StatusBadRequest, "the owner account cannot be deleted")
 		return
 	}
 	if err := s.db.DeleteUser(r.Context(), id); err != nil {

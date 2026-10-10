@@ -3,11 +3,16 @@ package monitor
 import (
 	"context"
 	"fmt"
-	"strings"
 	"time"
 
+	"github.com/neoauroraproject/Neo-Uptime/internal/backpack"
 	"github.com/neoauroraproject/Neo-Uptime/internal/store"
 )
+
+// PanelRef turns a stored panel into what the BackPack client needs.
+func PanelRef(p *store.BackpackPanel) backpack.PanelRef {
+	return backpack.PanelRef{ID: p.ID, URL: p.URL, Token: p.Token, IgnoreTLS: p.IgnoreTLS}
+}
 
 // checkBackpackTunnel reads one tunnel's state out of its panel's snapshot.
 //
@@ -26,7 +31,7 @@ func checkBackpackTunnel(ctx context.Context, m *store.Monitor, env *Env) Result
 	if maxAge < 5*time.Second {
 		maxAge = 5 * time.Second
 	}
-	snap := env.Backpack.Get(ctx, p, maxAge)
+	snap := env.Backpack.Get(ctx, PanelRef(p), maxAge)
 	if snap.Err != "" {
 		return down("panel " + p.Name + ": " + snap.Err)
 	}
@@ -35,36 +40,7 @@ func checkBackpackTunnel(ctx context.Context, m *store.Monitor, env *Env) Result
 		return down(fmt.Sprintf("tunnel %q is not on panel %s any more", m.Config.TunnelName, p.Name))
 	}
 
-	tc := *t
-	r := Result{Tunnel: &tc}
-	in, out := int64(t.InBytes), int64(t.OutBytes)
-	r.BytesIn, r.BytesOut = &in, &out
-	if t.Ping >= 0 {
-		v := float64(t.Ping)
-		r.Ping = &v
-	}
-
-	label := strings.ToUpper(firstNonEmpty(t.Carrier, t.Transport))
-	switch {
-	case t.QuotaHit:
-		r.Msg = "traffic quota reached — tunnel stopped by BackPack"
-	case t.State == "online" && t.ServiceDown != "" && m.Config.ServiceDownIsDown:
-		r.Msg = "tunnel up but the forwarded service is refusing: " + t.ServiceDown
-	case t.State == "online":
-		r.Up = true
-		r.Msg = fmt.Sprintf("%s online", label)
-		if t.Uptime != "" {
-			r.Msg += " · up " + t.Uptime
-		}
-		if t.ServiceDown != "" {
-			r.Msg += " · service down: " + t.ServiceDown
-		}
-	case t.State == "stopped":
-		r.Msg = "tunnel service is stopped"
-	default:
-		r.Msg = fmt.Sprintf("%s %s — peer not connected", label, firstNonEmpty(t.State, "offline"))
-	}
-	return r
+	return tunnelResult(t, m.Config.ServiceDownIsDown)
 }
 
 // checkBackpackPanel checks that the panel answers and reports its host.
@@ -76,7 +52,7 @@ func checkBackpackPanel(ctx context.Context, m *store.Monitor, env *Env) Result 
 	if err != nil {
 		return down("BackPack panel no longer exists")
 	}
-	snap := env.Backpack.Get(ctx, p, 5*time.Second)
+	snap := env.Backpack.Get(ctx, PanelRef(p), 5*time.Second)
 	if snap.Err != "" {
 		return down(snap.Err)
 	}

@@ -4,19 +4,24 @@ import { ArrowLeft, Bell, Plus, Save, X } from 'lucide-react'
 import { api } from '../lib/api'
 import { canEdit, useApp } from '../lib/store'
 import { clsx } from '../lib/format'
-import type { Monitor, MonitorConfig, MonitorTag, MonitorType, PanelSnapshot } from '../lib/types'
+import { useT } from '../lib/i18n'
+import type { AgentSource, Monitor, MonitorConfig, MonitorTag, MonitorType, PanelSnapshot, Tunnel } from '../lib/types'
 import { Alert, Button, Card, CardHeader, Checkbox, Empty, Field, Input, Select, Skeleton, Switch, TagChip, Textarea, toast } from '../components/ui'
 import { TypeIcon, typeGroups, typeInfo } from '../components/meta'
+import { CountryPicker } from '../components/flag'
+import { NotificationDialog } from '../components/NotificationDialog'
 
 type Draft = Omit<Monitor, 'id' | 'createdAt' | 'updatedAt' | 'sortOrder'>
 
 const httpTypes: MonitorType[] = ['http', 'keyword', 'json-query']
+const hostTypes: MonitorType[] = ['tcp', 'udp', 'ping', 'dns', 'tls', 'smtp', 'mqtt', 'grpc', 'radius', 'snmp', 'steam', 'kafka']
+const defaultPorts: Partial<Record<MonitorType, number>> = { tls: 443, smtp: 587, mqtt: 1883, grpc: 443, radius: 1812, snmp: 161, steam: 27015, kafka: 9092 }
 const codePresets = ['200-299', '300-399', '400-499', '500-599']
 
 function blank(defaults: number[]): Draft {
   return {
     name: '', type: 'http', parentId: null, active: true, interval: 60, retryInterval: 60, maxRetries: 1, timeout: 0,
-    resendInterval: 0, upsideDown: false, description: '', tags: [], notificationIds: defaults,
+    resendInterval: 0, upsideDown: false, description: '', tags: [], notificationIds: defaults, country: '',
     config: { url: 'https://', method: 'GET', acceptedStatusCodes: ['200-299'], maxRedirects: 10, bodyEncoding: 'json', dnsResolver: '1.1.1.1', dnsRecordType: 'A', port: 0, packetCount: 3, jsonOperator: '==' },
   }
 }
@@ -30,52 +35,56 @@ function Section({ title, subtitle, children }: { title: string; subtitle?: stri
   )
 }
 
-function NumberInput({ value, onChange, min, max, suffix, id }: { value: number; onChange: (n: number) => void; min?: number; max?: number; suffix?: string; id?: string }) {
+function NumberInput({ value, onChange, min, max, suffix, id }: { value: number; onChange: (v: number) => void; min?: number; max?: number; suffix?: string; id?: string }) {
   return (
     <div className="relative">
-      <Input id={id} type="number" inputMode="numeric" min={min} max={max} value={Number.isFinite(value) ? value : ''} onChange={(e) => onChange(e.target.value === '' ? 0 : Number(e.target.value))} className={suffix ? 'pr-16' : ''} />
-      {suffix && <span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-[13px] text-subtle">{suffix}</span>}
+      <Input id={id} dir="ltr" type="number" inputMode="numeric" min={min} max={max} value={Number.isFinite(value) ? value : ''} onChange={(e) => onChange(e.target.value === '' ? 0 : Number(e.target.value))} className={suffix ? 'pe-16' : ''} />
+      {suffix && <span className="pointer-events-none absolute end-3 top-1/2 -translate-y-1/2 text-[13px] text-subtle">{suffix}</span>}
     </div>
   )
 }
 
 export default function MonitorForm({ mode }: { mode: 'add' | 'edit' | 'clone' }) {
+  const t = useT()
   const { id } = useParams()
   const nav = useNavigate()
   const monitors = useApp((s) => s.monitors)
   const tags = useApp((s) => s.tags)
   const notifications = useApp((s) => s.notifications)
   const panels = useApp((s) => s.panels)
+  const agents = useApp((s) => s.agents)
   const role = useApp((s) => s.role)
-  const [d, setD] = useState<Draft | null>(mode === 'add' ? blank(notifications.filter((n) => n.isDefault).map((n) => n.id)) : null)
+  const [d, setD] = useState<Draft | null>(mode === 'add' ? blank(notifications.filter((x) => x.isDefault).map((x) => x.id)) : null)
   const [nameTouched, setNameTouched] = useState(mode !== 'add')
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
   const [snap, setSnap] = useState<PanelSnapshot | null>(null)
   const [snapLoading, setSnapLoading] = useState(false)
+  const [agentData, setAgentData] = useState<{ backpack?: AgentSource; kariz?: AgentSource } | null>(null)
   const [newTag, setNewTag] = useState({ tagId: 0, name: '', color: '#a3e635', value: '' })
   const [customCode, setCustomCode] = useState('')
+  const [notifOpen, setNotifOpen] = useState(false)
 
   useEffect(() => {
     if (mode === 'add' || !id) return
     api.get<Monitor>(`/api/monitors/${id}`).then((m) => {
       const { id: _i, createdAt: _c, updatedAt: _u, sortOrder: _s, ...rest } = m
       void _i; void _c; void _u; void _s
-      setD(mode === 'clone' ? { ...rest, name: `${m.name} (copy)`, pushToken: '' } : rest)
+      setD(mode === 'clone' ? { ...rest, name: `${m.name} (${t('copy')})`, pushToken: '' } : rest)
     }).catch((e) => setError(e.message))
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id, mode])
 
-  // Defaults loaded after the form opened still apply to a new monitor.
   useEffect(() => {
     if (mode !== 'add' || !d || d.notificationIds.length) return
-    const defs = notifications.filter((n) => n.isDefault).map((n) => n.id)
+    const defs = notifications.filter((x) => x.isDefault).map((x) => x.id)
     if (defs.length) setD({ ...d, notificationIds: defs })
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [notifications])
 
   const panelId = d?.config.panelId
   useEffect(() => {
-    if (!panelId || (d?.type !== 'backpack-tunnel')) return
+    if (!panelId || d?.type !== 'backpack-tunnel') return
     setSnapLoading(true)
     api.get<{ snapshot: PanelSnapshot }>(`/api/backpack/panels/${panelId}/snapshot`)
       .then((r) => setSnap(r.snapshot))
@@ -83,9 +92,15 @@ export default function MonitorForm({ mode }: { mode: 'add' | 'edit' | 'clone' }
       .finally(() => setSnapLoading(false))
   }, [panelId, d?.type])
 
+  const agentId = d?.config.agentId
+  useEffect(() => {
+    if (!agentId || d?.type !== 'agent-tunnel') return
+    api.get<{ backpack?: AgentSource; kariz?: AgentSource }>(`/api/agents/${agentId}`).then(setAgentData).catch(() => setAgentData(null))
+  }, [agentId, d?.type])
+
   const groups = useMemo(() => Object.values(monitors).filter((m) => m.type === 'group' && m.id !== Number(id)), [monitors, id])
 
-  if (!canEdit(role)) return <Empty title="Read-only account" body="Ask an admin for editor access to add or change monitors." />
+  if (!canEdit(role)) return <Empty title={t('Read-only account')} body={t('Ask an admin for editor access to add or change monitors.')} />
   if (!d) return <div className="p-8 space-y-4 max-w-5xl">{error ? <Alert tone="danger">{error}</Alert> : <><Skeleton className="h-10 w-64" /><Skeleton className="h-64" /><Skeleton className="h-64" /></>}</div>
 
   const set = <K extends keyof Draft>(k: K, v: Draft[K]) => setD({ ...d, [k]: v })
@@ -93,12 +108,24 @@ export default function MonitorForm({ mode }: { mode: 'add' | 'edit' | 'clone' }
   const c = d.config
   const isHttp = httpTypes.includes(d.type)
   const autoTimeout = Math.min(48, Math.max(5, Math.round(d.interval * 0.8)))
+  const agentTunnels: Tunnel[] = (c.source === 'kariz' ? agentData?.kariz?.tunnels : agentData?.backpack?.tunnels) ?? []
+
+  const chooseType = (type: MonitorType) => {
+    const next: MonitorConfig = { ...c }
+    if (type.startsWith('backpack') && !c.panelId) next.panelId = panels[0]?.id
+    if (type.startsWith('agent') && !c.agentId) next.agentId = agents[0]?.id
+    if (type === 'agent-tunnel' && !c.source) next.source = 'backpack'
+    if (defaultPorts[type] && !c.port) next.port = defaultPorts[type]
+    if (type === 'websocket' && !(c.url ?? '').startsWith('ws')) next.url = 'wss://'
+    if (isHttp && !httpTypes.includes(type) && type !== 'websocket') next.port = defaultPorts[type] ?? 0
+    setD({ ...d, type, config: next })
+  }
 
   const onUrl = (url: string) => {
     const next = { ...d, config: { ...c, url } }
     if (!nameTouched) {
       try {
-        next.name = new URL(url).hostname
+        next.name = new URL(url.replace(/^ws/, 'http')).hostname
       } catch { /* not a URL yet */ }
     }
     setD(next)
@@ -111,17 +138,17 @@ export default function MonitorForm({ mode }: { mode: 'add' | 'edit' | 'clone' }
     if (tagId === -1) {
       if (!newTag.name.trim()) return
       try {
-        const t = await api.post<{ id: number; name: string; color: string }>('/api/tags', { name: newTag.name.trim(), color: newTag.color })
+        const tg = await api.post<{ id: number; name: string; color: string }>('/api/tags', { name: newTag.name.trim(), color: newTag.color })
         await useApp.getState().loadTags()
-        tagId = t.id; name = t.name; color = t.color
+        tagId = tg.id; name = tg.name; color = tg.color
       } catch (e) {
-        toast.error('Could not create tag', (e as Error).message)
+        toast.error(t('Could not create tag'), (e as Error).message)
         return
       }
     } else {
-      const t = tags.find((x) => x.id === tagId)
-      if (!t) return
-      name = t.name; color = t.color
+      const tg = tags.find((x) => x.id === tagId)
+      if (!tg) return
+      name = tg.name; color = tg.color
     }
     const tag: MonitorTag = { tagId, name, color, value: newTag.value.trim() }
     if (!d.tags.some((x) => x.tagId === tag.tagId && x.value === tag.value)) set('tags', [...d.tags, tag])
@@ -137,7 +164,7 @@ export default function MonitorForm({ mode }: { mode: 'add' | 'edit' | 'clone' }
       const saved = mode === 'edit'
         ? await api.put<Monitor>(`/api/monitors/${id}`, body)
         : await api.post<Monitor>('/api/monitors', body)
-      toast.success(mode === 'edit' ? 'Monitor saved' : 'Monitor created', mode === 'edit' ? undefined : 'The first check is running now.')
+      toast.success(mode === 'edit' ? t('Monitor saved') : t('Monitor created'), mode === 'edit' ? undefined : t('The first check is running now.'))
       await useApp.getState().loadDashboard()
       nav(`/dashboard/${saved.id}`)
     } catch (err) {
@@ -148,125 +175,199 @@ export default function MonitorForm({ mode }: { mode: 'add' | 'edit' | 'clone' }
     }
   }
 
-  const title = mode === 'edit' ? `Edit ${d.name || 'monitor'}` : mode === 'clone' ? 'Clone monitor' : 'Add monitor'
+  const title = mode === 'edit' ? t('Edit {name}', { name: d.name || t('monitor') }) : mode === 'clone' ? t('Clone monitor') : t('Add monitor')
+  const hostPlaceholder = d.type === 'dns' ? 'example.com' : d.type === 'kafka' ? 'broker1:9092,broker2:9092' : '203.0.113.10'
+  const sec = (opts: string[]) => (
+    <Select id="sec" value={c.security ?? opts[0]} onChange={(e) => cfg('security', e.target.value)}>
+      {opts.map((o) => <option key={o} value={o}>{o === 'none' ? t('None') : o.toUpperCase()}</option>)}
+    </Select>
+  )
 
   return (
     <form onSubmit={submit} className="p-4 sm:p-6 lg:p-8 pb-28 max-w-[1300px]">
-      <Link to={mode === 'add' ? '/dashboard' : `/dashboard/${id}`} className="inline-flex items-center gap-1.5 text-sm text-muted hover:text-fg"><ArrowLeft className="size-4" />Back</Link>
+      <Link to={mode === 'add' ? '/dashboard' : `/dashboard/${id}`} className="inline-flex items-center gap-1.5 text-sm text-muted hover:text-fg"><ArrowLeft className="size-4 rtl:rotate-180" />{t('Back')}</Link>
       <h1 className="mt-3 font-display text-[28px] font-semibold tracking-tight">{title}</h1>
       {error && <Alert tone="danger" className="mt-4">{error}</Alert>}
 
       <div className="mt-6 grid xl:grid-cols-[minmax(0,1fr)_380px] gap-5 items-start">
         <div className="space-y-5 min-w-0">
-          <Section title="What to monitor">
-            <div role="radiogroup" aria-label="Monitor type" className="space-y-3">
+          <Section title={t('What to monitor')}>
+            <div role="radiogroup" aria-label={t('Monitor type')} className="space-y-3">
               {typeGroups.map((g) => (
                 <div key={g}>
-                  <p className="text-[12px] uppercase tracking-wider text-subtle font-semibold mb-1.5">{g}</p>
+                  <p className="text-[12px] uppercase tracking-wider text-subtle font-semibold mb-1.5">{t(g)}</p>
                   <div className="grid grid-cols-2 sm:grid-cols-3 2xl:grid-cols-4 gap-2">
-                    {(Object.keys(typeInfo) as MonitorType[]).filter((t) => typeInfo[t].group === g).map((t) => (
+                    {(Object.keys(typeInfo) as MonitorType[]).filter((tp) => typeInfo[tp].group === g).map((tp) => (
                       <button
-                        key={t}
+                        key={tp}
                         type="button"
                         role="radio"
-                        aria-checked={d.type === t}
-                        disabled={mode === 'edit' && d.type !== t && (d.type === 'push' || t === 'push')}
-                        onClick={() => setD({ ...d, type: t, config: { ...c, panelId: t.startsWith('backpack') ? c.panelId || panels[0]?.id : c.panelId } })}
+                        aria-checked={d.type === tp}
+                        disabled={mode === 'edit' && d.type !== tp && (d.type === 'push' || tp === 'push')}
+                        onClick={() => chooseType(tp)}
                         className={clsx(
-                          'flex items-center gap-2.5 rounded-xl border px-3 h-11 text-left text-[13.5px] font-medium transition-colors disabled:opacity-40',
-                          d.type === t ? 'border-accent bg-accent-soft text-fg' : 'border-line bg-surface-2 text-muted hover:text-fg hover:border-line-strong',
+                          'flex items-center gap-2.5 rounded-xl border px-3 h-11 text-start text-[13.5px] font-medium transition-colors disabled:opacity-40',
+                          d.type === tp ? 'border-accent bg-accent-soft text-fg' : 'border-line bg-surface-2 text-muted hover:text-fg hover:border-line-strong',
                         )}
                       >
-                        <TypeIcon type={t} className={clsx('size-4 shrink-0', d.type === t && 'text-accent-ink')} />
-                        <span className="truncate">{typeInfo[t].label}</span>
+                        <TypeIcon type={tp} className={clsx('size-4 shrink-0', d.type === tp && 'text-accent-ink')} />
+                        <span className="truncate">{t(typeInfo[tp].label)}</span>
                       </button>
                     ))}
                   </div>
                 </div>
               ))}
             </div>
-            <p className="text-[13px] text-muted">{typeInfo[d.type].help}</p>
+            <p className="text-[13px] text-muted">{t(typeInfo[d.type].help)}</p>
           </Section>
 
-          <Section title="Target">
-            <Field label="Friendly name" required htmlFor="name">
-              <Input id="name" value={d.name} onChange={(e) => { setNameTouched(true); set('name', e.target.value) }} placeholder="My website" required maxLength={150} />
-            </Field>
+          <Section title={t('Target')}>
+            <div className="grid sm:grid-cols-[1fr_220px] gap-4">
+              <Field label={t('Friendly name')} required htmlFor="name">
+                <Input id="name" dir="auto" value={d.name} onChange={(e) => { setNameTouched(true); set('name', e.target.value) }} placeholder={t('My website')} required maxLength={150} />
+              </Field>
+              <Field label={t('Flag')} htmlFor="flag" help={t('Shown on dashboards and status pages.')}>
+                <CountryPicker id="flag" value={d.country} onChange={(v) => set('country', v)} />
+              </Field>
+            </div>
 
-            {isHttp && (
-              <Field label="URL" required htmlFor="url">
-                <Input id="url" type="url" value={c.url ?? ''} onChange={(e) => onUrl(e.target.value)} placeholder="https://example.com/health" required className="font-mono" />
+            {(isHttp || d.type === 'websocket') && (
+              <Field label={t('URL')} required htmlFor="url">
+                <Input id="url" dir="ltr" value={c.url ?? ''} onChange={(e) => onUrl(e.target.value)} placeholder={d.type === 'websocket' ? 'wss://example.com/socket' : 'https://example.com/health'} required className="font-mono" />
               </Field>
             )}
             {d.type === 'keyword' && (
               <div className="grid sm:grid-cols-[1fr_auto] gap-4 items-end">
-                <Field label="Keyword" required help="Case-sensitive, searched in the response body." htmlFor="kw">
-                  <Input id="kw" value={c.keyword ?? ''} onChange={(e) => cfg('keyword', e.target.value)} required />
+                <Field label={t('Keyword')} required help={t('Case-sensitive, searched in the response body.')} htmlFor="kw">
+                  <Input id="kw" dir="auto" value={c.keyword ?? ''} onChange={(e) => cfg('keyword', e.target.value)} required />
                 </Field>
-                <div className="pb-2"><Switch checked={!!c.invertKeyword} onChange={(v) => cfg('invertKeyword', v)} label="Invert" description="Up when NOT found" /></div>
+                <div className="pb-2"><Switch checked={!!c.invertKeyword} onChange={(v) => cfg('invertKeyword', v)} label={t('Invert')} description={t('Up when NOT found')} /></div>
               </div>
             )}
             {d.type === 'json-query' && (
               <div className="grid sm:grid-cols-[1.4fr_0.8fr_1fr] gap-4">
-                <Field label="JSON path" required help="e.g. status or data.items[0].ok" htmlFor="jp">
-                  <Input id="jp" className="font-mono" value={c.jsonPath ?? ''} onChange={(e) => cfg('jsonPath', e.target.value)} required />
+                <Field label={t('JSON path')} required help={t('e.g. status or data.items[0].ok')} htmlFor="jp">
+                  <Input id="jp" dir="ltr" className="font-mono" value={c.jsonPath ?? ''} onChange={(e) => cfg('jsonPath', e.target.value)} required />
                 </Field>
-                <Field label="Condition" htmlFor="op">
+                <Field label={t('Condition')} htmlFor="op">
                   <Select id="op" value={c.jsonOperator ?? '=='} onChange={(e) => cfg('jsonOperator', e.target.value)}>
                     {['==', '!=', '<', '<=', '>', '>=', 'contains', 'notcontains', 'exists'].map((o) => <option key={o} value={o}>{o}</option>)}
                   </Select>
                 </Field>
                 {c.jsonOperator !== 'exists' && (
-                  <Field label="Expected value" htmlFor="ev">
-                    <Input id="ev" className="font-mono" value={c.expectedValue ?? ''} onChange={(e) => cfg('expectedValue', e.target.value)} placeholder="ok" />
+                  <Field label={t('Expected value')} htmlFor="ev">
+                    <Input id="ev" dir="ltr" className="font-mono" value={c.expectedValue ?? ''} onChange={(e) => cfg('expectedValue', e.target.value)} placeholder="ok" />
                   </Field>
                 )}
               </div>
             )}
 
-            {['tcp', 'ping', 'dns'].includes(d.type) && (
-              <div className={clsx('grid gap-4', d.type === 'tcp' ? 'sm:grid-cols-[1fr_140px]' : '')}>
-                <Field label="Hostname or IP" required htmlFor="host">
-                  <Input id="host" className="font-mono" value={c.hostname ?? ''} onChange={(e) => onHost(e.target.value)} placeholder={d.type === 'dns' ? 'example.com' : '203.0.113.10'} required />
+            {hostTypes.includes(d.type) && (
+              <div className={clsx('grid gap-4', !['ping', 'dns'].includes(d.type) ? 'sm:grid-cols-[1fr_140px]' : '')}>
+                <Field label={d.type === 'kafka' ? t('Brokers') : t('Hostname or IP')} required htmlFor="host">
+                  <Input id="host" dir="ltr" className="font-mono" value={c.hostname ?? ''} onChange={(e) => onHost(e.target.value)} placeholder={hostPlaceholder} required />
                 </Field>
-                {d.type === 'tcp' && (
-                  <Field label="Port" required htmlFor="port">
-                    <NumberInput id="port" value={c.port ?? 0} min={1} max={65535} onChange={(n) => cfg('port', n)} />
+                {!['ping', 'dns'].includes(d.type) && (
+                  <Field label={t('Port')} required={d.type === 'tcp' || d.type === 'udp'} htmlFor="port">
+                    <NumberInput id="port" value={c.port ?? 0} min={1} max={65535} onChange={(v) => cfg('port', v)} />
                   </Field>
                 )}
               </div>
             )}
             {d.type === 'ping' && (
-              <Field label="Packets per check" help="The average round-trip is recorded; all lost means down." htmlFor="pc">
-                <NumberInput id="pc" value={c.packetCount ?? 3} min={1} max={20} onChange={(n) => cfg('packetCount', n)} />
+              <Field label={t('Packets per check')} help={t('The average round-trip is recorded; all lost means down.')} htmlFor="pc">
+                <NumberInput id="pc" value={c.packetCount ?? 3} min={1} max={20} onChange={(v) => cfg('packetCount', v)} />
               </Field>
             )}
             {d.type === 'dns' && (
               <div className="grid sm:grid-cols-3 gap-4">
-                <Field label="Resolver" htmlFor="rs"><Input id="rs" className="font-mono" value={c.dnsResolver ?? ''} onChange={(e) => cfg('dnsResolver', e.target.value)} placeholder="1.1.1.1" /></Field>
-                <Field label="Record type" htmlFor="rt">
+                <Field label={t('Resolver')} htmlFor="rs"><Input id="rs" dir="ltr" className="font-mono" value={c.dnsResolver ?? ''} onChange={(e) => cfg('dnsResolver', e.target.value)} placeholder="1.1.1.1" /></Field>
+                <Field label={t('Record type')} htmlFor="rt">
                   <Select id="rt" value={c.dnsRecordType ?? 'A'} onChange={(e) => cfg('dnsRecordType', e.target.value)}>
-                    {['A', 'AAAA', 'CNAME', 'MX', 'NS', 'TXT', 'SRV'].map((t) => <option key={t}>{t}</option>)}
+                    {['A', 'AAAA', 'CNAME', 'MX', 'NS', 'TXT', 'SRV'].map((r) => <option key={r}>{r}</option>)}
                   </Select>
                 </Field>
-                <Field label="Expect (optional)" help="Down unless a record contains this." htmlFor="ex"><Input id="ex" className="font-mono" value={c.expectedValue ?? ''} onChange={(e) => cfg('expectedValue', e.target.value)} /></Field>
+                <Field label={t('Expect (optional)')} help={t('Down unless a record contains this.')} htmlFor="ex"><Input id="ex" dir="ltr" className="font-mono" value={c.expectedValue ?? ''} onChange={(e) => cfg('expectedValue', e.target.value)} /></Field>
               </div>
+            )}
+            {d.type === 'udp' && (
+              <div className="grid sm:grid-cols-2 gap-4">
+                <Field label={t('Payload (optional)')} htmlFor="pl" help={t('Text to send; empty sends one zero byte.')}><Input id="pl" dir="ltr" className="font-mono" value={c.payload ?? ''} onChange={(e) => cfg('payload', e.target.value)} /></Field>
+                <Field label={t('Expect in reply (optional)')} htmlFor="ex" help={t('Set it to require an answer.')}><Input id="ex" dir="ltr" className="font-mono" value={c.expectedValue ?? ''} onChange={(e) => cfg('expectedValue', e.target.value)} /></Field>
+              </div>
+            )}
+            {d.type === 'tls' && (
+              <Field label={t('Go down when fewer days remain than')} htmlFor="wd">
+                <NumberInput id="wd" value={c.warnDays ?? 14} min={1} max={365} suffix={t('days')} onChange={(v) => cfg('warnDays', v)} />
+              </Field>
+            )}
+            {d.type === 'smtp' && (
+              <div className="grid sm:grid-cols-2 gap-4 items-end">
+                <Field label={t('Security')} htmlFor="sec">{sec(['starttls', 'tls', 'none'])}</Field>
+                <div className="pb-2"><Switch checked={!!c.ignoreTls} onChange={(v) => cfg('ignoreTls', v)} label={t('Ignore TLS errors')} /></div>
+              </div>
+            )}
+            {d.type === 'mqtt' && (
+              <>
+                <div className="grid sm:grid-cols-3 gap-4">
+                  <Field label={t('Security')} htmlFor="sec">{sec(['none', 'tls'])}</Field>
+                  <Field label={t('Username')} htmlFor="mu"><Input id="mu" dir="ltr" autoComplete="off" value={c.username ?? ''} onChange={(e) => cfg('username', e.target.value)} /></Field>
+                  <Field label={t('Password')} htmlFor="mp"><Input id="mp" dir="ltr" type="password" autoComplete="new-password" value={c.password ?? ''} onChange={(e) => cfg('password', e.target.value)} /></Field>
+                </div>
+                <div className="grid sm:grid-cols-2 gap-4">
+                  <Field label={t('Topic (optional)')} htmlFor="tp" help={t('Waits for a message on this topic.')}><Input id="tp" dir="ltr" className="font-mono" value={c.topic ?? ''} onChange={(e) => cfg('topic', e.target.value)} placeholder="sensors/health" /></Field>
+                  <Field label={t('Keyword (optional)')} htmlFor="kw2"><Input id="kw2" dir="auto" value={c.keyword ?? ''} onChange={(e) => cfg('keyword', e.target.value)} /></Field>
+                </div>
+              </>
+            )}
+            {d.type === 'grpc' && (
+              <div className="grid sm:grid-cols-[1fr_auto] gap-4 items-end">
+                <Field label={t('Service name (optional)')} htmlFor="gs" help={t('Empty checks the whole server.')}><Input id="gs" dir="ltr" className="font-mono" value={c.service ?? ''} onChange={(e) => cfg('service', e.target.value)} placeholder="my.package.Service" /></Field>
+                <div className="pb-2"><Switch checked={c.security === 'tls'} onChange={(v) => cfg('security', v ? 'tls' : '')} label={t('Use TLS')} /></div>
+              </div>
+            )}
+            {d.type === 'radius' && (
+              <div className="grid sm:grid-cols-3 gap-4">
+                <Field label={t('Shared secret')} required htmlFor="rsct"><Input id="rsct" dir="ltr" type="password" autoComplete="off" value={c.secret ?? ''} onChange={(e) => cfg('secret', e.target.value)} required /></Field>
+                <Field label={t('Username')} htmlFor="ru"><Input id="ru" dir="ltr" autoComplete="off" value={c.username ?? ''} onChange={(e) => cfg('username', e.target.value)} /></Field>
+                <Field label={t('Password')} htmlFor="rp"><Input id="rp" dir="ltr" type="password" autoComplete="new-password" value={c.password ?? ''} onChange={(e) => cfg('password', e.target.value)} /></Field>
+              </div>
+            )}
+            {d.type === 'snmp' && (
+              <>
+                <div className="grid sm:grid-cols-3 gap-4">
+                  <Field label={t('Community')} htmlFor="sc"><Input id="sc" dir="ltr" value={c.community ?? ''} onChange={(e) => cfg('community', e.target.value)} placeholder="public" /></Field>
+                  <Field label="OID" required htmlFor="oid"><Input id="oid" dir="ltr" className="font-mono" value={c.oid ?? ''} onChange={(e) => cfg('oid', e.target.value)} placeholder="1.3.6.1.2.1.1.3.0" required /></Field>
+                  <Field label={t('Version')} htmlFor="sv"><Select id="sv" value={c.snmpVersion ?? '2c'} onChange={(e) => cfg('snmpVersion', e.target.value)}><option value="2c">v2c</option><option value="1">v1</option></Select></Field>
+                </div>
+                <div className="grid sm:grid-cols-2 gap-4">
+                  <Field label={t('Condition')} htmlFor="sop"><Select id="sop" value={c.jsonOperator ?? '=='} onChange={(e) => cfg('jsonOperator', e.target.value)}>{['==', '!=', '<', '<=', '>', '>=', 'contains'].map((o) => <option key={o}>{o}</option>)}</Select></Field>
+                  <Field label={t('Expected value (optional)')} htmlFor="sev"><Input id="sev" dir="ltr" className="font-mono" value={c.expectedValue ?? ''} onChange={(e) => cfg('expectedValue', e.target.value)} /></Field>
+                </div>
+              </>
+            )}
+            {d.type === 'kafka' && (
+              <div className="grid sm:grid-cols-2 gap-4"><Field label={t('Security')} htmlFor="sec">{sec(['none', 'tls'])}</Field></div>
             )}
 
             {d.type === 'docker' && (
               <div className="grid sm:grid-cols-2 gap-4">
-                <Field label="Container name or ID" required htmlFor="cn"><Input id="cn" className="font-mono" value={c.containerName ?? ''} onChange={(e) => cfg('containerName', e.target.value)} required /></Field>
-                <Field label="Docker host" help="Socket path or tcp://host:2375" htmlFor="dh"><Input id="dh" className="font-mono" value={c.dockerHost ?? ''} onChange={(e) => cfg('dockerHost', e.target.value)} placeholder="/var/run/docker.sock" /></Field>
+                <Field label={t('Container name or ID')} required htmlFor="cn"><Input id="cn" dir="ltr" className="font-mono" value={c.containerName ?? ''} onChange={(e) => cfg('containerName', e.target.value)} required /></Field>
+                <Field label={t('Docker host')} help={t('Socket path or tcp://host:2375')} htmlFor="dh"><Input id="dh" dir="ltr" className="font-mono" value={c.dockerHost ?? ''} onChange={(e) => cfg('dockerHost', e.target.value)} placeholder="/var/run/docker.sock" /></Field>
               </div>
             )}
-            {['postgres', 'mysql', 'redis'].includes(d.type) && (
+            {['postgres', 'mysql', 'mssql', 'mongodb', 'redis'].includes(d.type) && (
               <>
-                <Field label="Connection string" required htmlFor="cs" help={d.type === 'postgres' ? 'postgres://user:pass@host:5432/db?sslmode=disable' : d.type === 'mysql' ? 'mysql://user:pass@host:3306/db' : 'redis://:password@host:6379/0 (rediss:// for TLS)'}>
-                  <Input id="cs" type="password" autoComplete="off" className="font-mono" value={c.connectionString ?? ''} onChange={(e) => cfg('connectionString', e.target.value)} required />
+                <Field label={t('Connection string')} required htmlFor="cs" help={{
+                  postgres: 'postgres://user:pass@host:5432/db?sslmode=disable', mysql: 'mysql://user:pass@host:3306/db',
+                  mssql: 'sqlserver://user:pass@host:1433?database=db', mongodb: 'mongodb://user:pass@host:27017/?authSource=admin',
+                  redis: 'redis://:password@host:6379/0 (rediss:// for TLS)',
+                }[d.type as 'postgres']}>
+                  <Input id="cs" dir="ltr" type="password" autoComplete="off" className="font-mono" value={c.connectionString ?? ''} onChange={(e) => cfg('connectionString', e.target.value)} required />
                 </Field>
-                {d.type !== 'redis' && (
-                  <Field label="Query (optional)" htmlFor="q" help="Run after connecting; leave empty for a plain connection check.">
-                    <Input id="q" className="font-mono" value={c.query ?? ''} onChange={(e) => cfg('query', e.target.value)} placeholder="SELECT 1" />
+                {['postgres', 'mysql', 'mssql'].includes(d.type) && (
+                  <Field label={t('Query (optional)')} htmlFor="q" help={t('Run after connecting; leave empty for a plain connection check.')}>
+                    <Input id="q" dir="ltr" className="font-mono" value={c.query ?? ''} onChange={(e) => cfg('query', e.target.value)} placeholder="SELECT 1" />
                   </Field>
                 )}
               </>
@@ -274,89 +375,129 @@ export default function MonitorForm({ mode }: { mode: 'add' | 'edit' | 'clone' }
 
             {d.type.startsWith('backpack') && (
               panels.length === 0 ? (
-                <Alert tone="info" title="No BackPack panel connected yet">
-                  Connect your panel first under <Link className="text-accent-ink underline" to="/tunnels/panels">Tunnels → Panels</Link>; its tunnels can then be imported in one click.
+                <Alert tone="info" title={t('No BackPack panel connected yet')}>
+                  {t('Connect your panel first under Tunnels → Panels, or install the agent on that server under Servers.')} <Link className="text-accent-ink underline" to="/tunnels/panels">{t('Connect panel')}</Link>
                 </Alert>
               ) : (
                 <div className="grid sm:grid-cols-2 gap-4">
-                  <Field label="BackPack panel" required htmlFor="pn">
+                  <Field label={t('BackPack panel')} required htmlFor="pn">
                     <Select id="pn" value={c.panelId ?? ''} onChange={(e) => setD({ ...d, config: { ...c, panelId: Number(e.target.value), tunnelName: '' } })}>
-                      <option value="" disabled>Choose…</option>
+                      <option value="" disabled>{t('Choose…')}</option>
                       {panels.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
                     </Select>
                   </Field>
                   {d.type === 'backpack-tunnel' && (
-                    <Field label="Tunnel" required htmlFor="tn" help={snap?.error ? `Panel answered: ${snap.error}` : snapLoading ? 'Reading tunnels from the panel…' : undefined}>
+                    <Field label={t('Tunnel')} required htmlFor="tn" help={snap?.error ? t('Panel answered: {e}', { e: snap.error }) : snapLoading ? t('Reading tunnels from the panel…') : undefined}>
                       {snap?.tunnels?.length ? (
                         <Select id="tn" value={c.tunnelName ?? ''} onChange={(e) => setD({ ...d, config: { ...c, tunnelName: e.target.value }, name: nameTouched ? d.name : e.target.value })}>
-                          <option value="" disabled>Choose…</option>
-                          {snap.tunnels.map((t) => <option key={t.name} value={t.name}>{t.name} — {(t.carrier || t.transport).toUpperCase()} · {t.state}</option>)}
+                          <option value="" disabled>{t('Choose…')}</option>
+                          {snap.tunnels.map((tn) => <option key={tn.name} value={tn.name}>{tn.name} — {(tn.carrier || tn.transport).toUpperCase()} · {tn.state}</option>)}
                         </Select>
                       ) : (
-                        <Input id="tn" value={c.tunnelName ?? ''} onChange={(e) => cfg('tunnelName', e.target.value)} placeholder="Tunnel name as shown in BackPack" />
+                        <Input id="tn" dir="ltr" value={c.tunnelName ?? ''} onChange={(e) => cfg('tunnelName', e.target.value)} placeholder={t('Tunnel name as shown in BackPack')} />
                       )}
                     </Field>
-                  )}
-                  {d.type === 'backpack-tunnel' && (
-                    <div className="sm:col-span-2">
-                      <Switch checked={!!c.serviceDownIsDown} onChange={(v) => cfg('serviceDownIsDown', v)} label="Treat “service refusing” as down" description="BackPack can see the tunnel up while the service behind it refuses connections. Off: show it as a note; on: alert." />
-                    </div>
                   )}
                 </div>
               )
             )}
 
+            {d.type.startsWith('agent') && (
+              agents.length === 0 ? (
+                <Alert tone="info" title={t('No server added yet')}>
+                  {t('Add the server under Servers and run the one-line agent install on it.')} <Link className="text-accent-ink underline" to="/servers">{t('Add a server')}</Link>
+                </Alert>
+              ) : (
+                <div className={clsx('grid gap-4', d.type === 'agent-tunnel' ? 'sm:grid-cols-3' : 'sm:grid-cols-2')}>
+                  <Field label={t('Server')} required htmlFor="ag">
+                    <Select id="ag" value={c.agentId ?? ''} onChange={(e) => setD({ ...d, config: { ...c, agentId: Number(e.target.value), tunnelName: '' } })}>
+                      <option value="" disabled>{t('Choose…')}</option>
+                      {agents.map((a) => <option key={a.id} value={a.id}>{a.name}{a.online ? '' : ` (${t('offline')})`}</option>)}
+                    </Select>
+                  </Field>
+                  {d.type === 'agent-tunnel' && (
+                    <>
+                      <Field label={t('Program')} htmlFor="src">
+                        <Select id="src" value={c.source ?? 'backpack'} onChange={(e) => setD({ ...d, config: { ...c, source: e.target.value as 'backpack' | 'kariz', tunnelName: '' } })}>
+                          <option value="backpack">BackPack</option>
+                          <option value="kariz">Kariz</option>
+                        </Select>
+                      </Field>
+                      <Field label={t('Tunnel')} required htmlFor="atn">
+                        {agentTunnels.length ? (
+                          <Select id="atn" value={c.tunnelName ?? ''} onChange={(e) => setD({ ...d, config: { ...c, tunnelName: e.target.value }, name: nameTouched ? d.name : e.target.value })}>
+                            <option value="" disabled>{t('Choose…')}</option>
+                            {agentTunnels.map((tn) => <option key={tn.name} value={tn.name}>{tn.name} — {(tn.carrier || tn.transport || '').toUpperCase()} · {tn.state}</option>)}
+                          </Select>
+                        ) : (
+                          <Input id="atn" dir="ltr" value={c.tunnelName ?? ''} onChange={(e) => cfg('tunnelName', e.target.value)} placeholder={t('Tunnel name')} />
+                        )}
+                      </Field>
+                    </>
+                  )}
+                  {(d.type === 'agent-tunnel') && (
+                    <div className="sm:col-span-3">
+                      <Switch checked={!!c.serviceDownIsDown} onChange={(v) => cfg('serviceDownIsDown', v)} label={t('Treat “service refusing” as down')} description={t('The tunnel can be up while the service behind it refuses connections. Off: show it as a note; on: alert.')} />
+                    </div>
+                  )}
+                </div>
+              )
+            )}
+            {d.type === 'backpack-tunnel' && panels.length > 0 && (
+              <Switch checked={!!c.serviceDownIsDown} onChange={(v) => cfg('serviceDownIsDown', v)} label={t('Treat “service refusing” as down')} description={t('The tunnel can be up while the service behind it refuses connections. Off: show it as a note; on: alert.')} />
+            )}
+
             {d.type === 'push' && (
-              <Alert tone="info" title="Push URL">
-                {d.pushToken ? <>Your script should call <code className="font-mono text-fg break-all">/api/push/{d.pushToken}?status=up&amp;msg=OK&amp;ping=</code></> : 'A private URL is generated when you save. Your script calls it; if it stays silent longer than the interval, the monitor goes down.'}
+              <Alert tone="info" title={t('Push URL')}>
+                {d.pushToken ? <>{t('Your script should call')} <code className="font-mono text-fg break-all" dir="ltr">/api/push/{d.pushToken}?status=up&amp;msg=OK&amp;ping=</code></> : t('A private URL is generated when you save. Your script calls it; if it stays silent longer than the interval, the monitor goes down.')}
               </Alert>
             )}
           </Section>
 
-          <Section title="Checks & alerts">
+          <Section title={t('Checks & alerts')}>
             <div className="grid sm:grid-cols-2 gap-4">
-              <Field label={d.type === 'push' ? 'Expected every' : 'Check every'} htmlFor="iv" help="Minimum 10 seconds.">
-                <NumberInput id="iv" value={d.interval} min={10} max={86400} suffix="seconds" onChange={(n) => setD({ ...d, interval: n, retryInterval: d.retryInterval === d.interval ? n : d.retryInterval })} />
+              <Field label={d.type === 'push' ? t('Expected every') : t('Check every')} htmlFor="iv" help={t('Minimum 10 seconds.')}>
+                <NumberInput id="iv" value={d.interval} min={10} max={86400} suffix={t('seconds')} onChange={(v) => setD({ ...d, interval: v, retryInterval: d.retryInterval === d.interval ? v : d.retryInterval })} />
               </Field>
-              <Field label="Retries before down" htmlFor="rt2" help="Failed checks in a row shown as pending before alerting.">
-                <NumberInput id="rt2" value={d.maxRetries} min={0} max={20} onChange={(n) => set('maxRetries', n)} />
+              <Field label={t('Retries before down')} htmlFor="rt2" help={t('Failed checks in a row shown as pending before alerting.')}>
+                <NumberInput id="rt2" value={d.maxRetries} min={0} max={20} onChange={(v) => set('maxRetries', v)} />
               </Field>
-              <Field label="Retry every" htmlFor="ri" help="How soon to re-check while pending.">
-                <NumberInput id="ri" value={d.retryInterval} min={10} max={86400} suffix="seconds" onChange={(n) => set('retryInterval', n)} />
+              <Field label={t('Retry every')} htmlFor="ri" help={t('How soon to re-check while pending.')}>
+                <NumberInput id="ri" value={d.retryInterval} min={10} max={86400} suffix={t('seconds')} onChange={(v) => set('retryInterval', v)} />
               </Field>
               {d.type !== 'push' && d.type !== 'group' && (
-                <Field label="Timeout" htmlFor="to" help={`Leave 0 for automatic (${autoTimeout}s).`}>
-                  <NumberInput id="to" value={d.timeout} min={0} max={d.interval} suffix="seconds" onChange={(n) => set('timeout', n)} />
+                <Field label={t('Timeout')} htmlFor="to" help={t('Leave 0 for automatic ({n}s).', { n: autoTimeout })}>
+                  <NumberInput id="to" value={d.timeout} min={0} max={d.interval} suffix={t('seconds')} onChange={(v) => set('timeout', v)} />
                 </Field>
               )}
-              <Field label="Re-send alert while down" htmlFor="rs2" help="Every N checks. 0 sends one alert per outage.">
-                <NumberInput id="rs2" value={d.resendInterval} min={0} suffix="checks" onChange={(n) => set('resendInterval', n)} />
+              <Field label={t('Re-send alert while down')} htmlFor="rs2" help={t('Every N checks. 0 sends one alert per outage.')}>
+                <NumberInput id="rs2" value={d.resendInterval} min={0} suffix={t('checks')} onChange={(v) => set('resendInterval', v)} />
               </Field>
             </div>
             {d.type !== 'group' && (
-              <Switch checked={d.upsideDown} onChange={(v) => set('upsideDown', v)} label="Upside-down mode" description="Flip the result: reachable means down. For things that should stay closed." />
+              <Switch checked={d.upsideDown} onChange={(v) => set('upsideDown', v)} label={t('Upside-down mode')} description={t('Flip the result: reachable means down. For things that should stay closed.')} />
             )}
           </Section>
 
           {isHttp && (
-            <Section title="HTTP options">
+            <Section title={t('HTTP options')}>
               <div className="grid sm:grid-cols-3 gap-4">
-                <Field label="Method" htmlFor="mt">
+                <Field label={t('Method')} htmlFor="mt">
                   <Select id="mt" value={c.method ?? 'GET'} onChange={(e) => cfg('method', e.target.value)}>
                     {['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'HEAD', 'OPTIONS'].map((x) => <option key={x}>{x}</option>)}
                   </Select>
                 </Field>
-                <Field label="Max redirects" htmlFor="mr" help="0 to not follow.">
-                  <NumberInput id="mr" value={c.maxRedirects ?? 10} min={0} max={30} onChange={(n) => cfg('maxRedirects', n)} />
+                <Field label={t('Max redirects')} htmlFor="mr" help={t('0 to not follow.')}>
+                  <NumberInput id="mr" value={c.maxRedirects ?? 10} min={0} max={30} onChange={(v) => cfg('maxRedirects', v)} />
                 </Field>
-                <Field label="Body encoding" htmlFor="be">
+                <Field label={t('Body encoding')} htmlFor="be">
                   <Select id="be" value={c.bodyEncoding ?? 'json'} onChange={(e) => cfg('bodyEncoding', e.target.value)}>
-                    <option value="json">JSON</option><option value="form">Form</option><option value="xml">XML</option><option value="raw">Raw text</option>
+                    <option value="json">JSON</option><option value="form">Form</option><option value="xml">XML</option><option value="raw">{t('Raw text')}</option>
                   </Select>
                 </Field>
               </div>
-              <Field label="Accepted status codes">
-                <div className="flex flex-wrap gap-2">
+              <Field label={t('Accepted status codes')}>
+                <div className="flex flex-wrap gap-2" dir="ltr">
                   {[...new Set([...codePresets, ...(c.acceptedStatusCodes ?? [])])].map((code) => {
                     const on = (c.acceptedStatusCodes ?? []).includes(code)
                     return (
@@ -367,96 +508,105 @@ export default function MonitorForm({ mode }: { mode: 'add' | 'edit' | 'clone' }
                     )
                   })}
                   <div className="flex gap-1">
-                    <Input value={customCode} onChange={(e) => setCustomCode(e.target.value)} placeholder="e.g. 401" className="h-8 w-28 font-mono" aria-label="Custom status code" />
-                    <Button type="button" size="sm" onClick={() => { if (customCode.trim()) { cfg('acceptedStatusCodes', [...(c.acceptedStatusCodes ?? []), customCode.trim()]); setCustomCode('') } }}>Add</Button>
+                    <Input value={customCode} onChange={(e) => setCustomCode(e.target.value)} placeholder="401" className="h-8 w-24 font-mono" aria-label={t('Custom status code')} />
+                    <Button type="button" size="sm" onClick={() => { if (customCode.trim()) { cfg('acceptedStatusCodes', [...(c.acceptedStatusCodes ?? []), customCode.trim()]); setCustomCode('') } }}>{t('Add')}</Button>
                   </div>
                 </div>
               </Field>
               <div className="grid sm:grid-cols-2 gap-4">
-                <Field label="Request body" htmlFor="bd"><Textarea id="bd" className="font-mono text-[13px]" value={c.body ?? ''} onChange={(e) => cfg('body', e.target.value)} placeholder='{"ping": true}' /></Field>
-                <Field label="Headers (JSON)" htmlFor="hd" error={c.headers && (() => { try { JSON.parse(c.headers!); return undefined } catch { return 'Not valid JSON' } })() || undefined}>
-                  <Textarea id="hd" className="font-mono text-[13px]" value={c.headers ?? ''} onChange={(e) => cfg('headers', e.target.value)} placeholder={'{\n  "Authorization": "Bearer …"\n}'} />
+                <Field label={t('Request body')} htmlFor="bd"><Textarea id="bd" dir="ltr" className="font-mono text-[13px]" value={c.body ?? ''} onChange={(e) => cfg('body', e.target.value)} placeholder='{"ping": true}' /></Field>
+                <Field label={t('Headers (JSON)')} htmlFor="hd" error={c.headers && (() => { try { JSON.parse(c.headers!); return undefined } catch { return t('Not valid JSON') } })() || undefined}>
+                  <Textarea id="hd" dir="ltr" className="font-mono text-[13px]" value={c.headers ?? ''} onChange={(e) => cfg('headers', e.target.value)} placeholder={'{\n  "Authorization": "Bearer …"\n}'} />
                 </Field>
               </div>
               <div className="grid sm:grid-cols-2 gap-4">
-                <Field label="Basic auth user" htmlFor="bu"><Input id="bu" autoComplete="off" value={c.basicAuthUser ?? ''} onChange={(e) => cfg('basicAuthUser', e.target.value)} /></Field>
-                <Field label="Basic auth password" htmlFor="bp"><Input id="bp" type="password" autoComplete="new-password" value={c.basicAuthPass ?? ''} onChange={(e) => cfg('basicAuthPass', e.target.value)} /></Field>
+                <Field label={t('Basic auth user')} htmlFor="bu"><Input id="bu" dir="ltr" autoComplete="off" value={c.basicAuthUser ?? ''} onChange={(e) => cfg('basicAuthUser', e.target.value)} /></Field>
+                <Field label={t('Basic auth password')} htmlFor="bp"><Input id="bp" dir="ltr" type="password" autoComplete="new-password" value={c.basicAuthPass ?? ''} onChange={(e) => cfg('basicAuthPass', e.target.value)} /></Field>
               </div>
               <div className="grid sm:grid-cols-2 gap-4">
-                <Switch checked={!!c.ignoreTls} onChange={(v) => cfg('ignoreTls', v)} label="Ignore TLS errors" description="Accept self-signed or expired certificates." />
-                <Switch checked={!!c.certExpiryNotify} onChange={(v) => cfg('certExpiryNotify', v)} label="Certificate expiry alerts" description="Warn 21, 14 and 7 days before (Settings → History)." />
+                <Switch checked={!!c.ignoreTls} onChange={(v) => cfg('ignoreTls', v)} label={t('Ignore TLS errors')} description={t('Accept self-signed or expired certificates.')} />
+                <Switch checked={!!c.certExpiryNotify} onChange={(v) => cfg('certExpiryNotify', v)} label={t('Certificate expiry alerts')} description={t('Warn 21, 14 and 7 days before (Settings → History).')} />
               </div>
+            </Section>
+          )}
+          {d.type === 'websocket' && (
+            <Section title={t('Options')}>
+              <Switch checked={!!c.ignoreTls} onChange={(v) => cfg('ignoreTls', v)} label={t('Ignore TLS errors')} description={t('Accept self-signed or expired certificates.')} />
             </Section>
           )}
         </div>
 
         <div className="space-y-5 xl:sticky xl:top-6">
-          <Section title="Organise">
-            <Field label="Group" htmlFor="grp" help="Groups go down when a member does; their maintenance applies to members.">
+          <Section title={t('Notifications')} subtitle={t('Who hears about it when this goes down or comes back.')}>
+            {notifications.length === 0 ? (
+              <div className="space-y-3">
+                <p className="text-sm text-muted">{t('No channels yet. Set up Telegram once and every monitor can use it.')}</p>
+                <Button type="button" variant="soft" icon={<Plus className="size-4" />} onClick={() => setNotifOpen(true)}>{t('Set up notification')}</Button>
+              </div>
+            ) : (
+              <div className="space-y-2.5">
+                {notifications.map((nt) => (
+                  <Checkbox
+                    key={nt.id}
+                    checked={d.notificationIds.includes(nt.id)}
+                    onChange={(v) => set('notificationIds', v ? [...d.notificationIds, nt.id] : d.notificationIds.filter((x) => x !== nt.id))}
+                    label={<span className="inline-flex items-center gap-2"><Bell className="size-3.5 text-muted" /><span dir="auto">{nt.name}</span><span className="text-[12px] text-subtle">{nt.type}</span>{nt.isDefault && <span className="text-[11px] text-accent-ink">{t('default')}</span>}</span>}
+                  />
+                ))}
+                <button type="button" className="text-[13px] text-accent-ink hover:underline inline-flex items-center gap-1" onClick={() => setNotifOpen(true)}><Plus className="size-3.5" />{t('Set up notification')}</button>
+              </div>
+            )}
+          </Section>
+
+          <Section title={t('Organise')}>
+            <Field label={t('Group')} htmlFor="grp" help={t('Groups go down when a member does; their maintenance applies to members.')}>
               <Select id="grp" value={d.parentId ?? ''} onChange={(e) => set('parentId', e.target.value ? Number(e.target.value) : null)}>
-                <option value="">None</option>
+                <option value="">{t('None')}</option>
                 {groups.map((g) => <option key={g.id} value={g.id}>{g.name}</option>)}
               </Select>
             </Field>
-            <Field label="Description" htmlFor="desc"><Textarea id="desc" className="min-h-20" value={d.description} onChange={(e) => set('description', e.target.value)} placeholder="What this is and who to call" /></Field>
-            <Field label="Tags">
+            <Field label={t('Description')} htmlFor="desc"><Textarea id="desc" dir="auto" className="min-h-20" value={d.description} onChange={(e) => set('description', e.target.value)} placeholder={t('What this is and who to call')} /></Field>
+            <Field label={t('Tags')}>
               <div className="space-y-2.5">
                 {d.tags.length > 0 && (
                   <div className="flex flex-wrap gap-1.5">
-                    {d.tags.map((t, i) => (
+                    {d.tags.map((tg, i) => (
                       <span key={i} className="inline-flex items-center gap-1">
-                        <TagChip {...t} />
-                        <button type="button" aria-label={`Remove tag ${t.name}`} onClick={() => set('tags', d.tags.filter((_, j) => j !== i))} className="text-subtle hover:text-down"><X className="size-3.5" /></button>
+                        <TagChip {...tg} />
+                        <button type="button" aria-label={t('Remove tag {name}', { name: tg.name })} onClick={() => set('tags', d.tags.filter((_, j) => j !== i))} className="text-subtle hover:text-down"><X className="size-3.5" /></button>
                       </span>
                     ))}
                   </div>
                 )}
                 <div className="flex gap-2">
-                  <Select className="flex-1" aria-label="Tag" value={newTag.tagId || ''} onChange={(e) => setNewTag({ ...newTag, tagId: Number(e.target.value) })}>
-                    <option value="">Add a tag…</option>
-                    {tags.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
-                    <option value={-1}>+ New tag</option>
+                  <Select className="flex-1" aria-label={t('Tag')} value={newTag.tagId || ''} onChange={(e) => setNewTag({ ...newTag, tagId: Number(e.target.value) })}>
+                    <option value="">{t('Add a tag…')}</option>
+                    {tags.map((tg) => <option key={tg.id} value={tg.id}>{tg.name}</option>)}
+                    <option value={-1}>{t('+ New tag')}</option>
                   </Select>
-                  <Input className="w-24" aria-label="Tag value" placeholder="value" value={newTag.value} onChange={(e) => setNewTag({ ...newTag, value: e.target.value })} />
+                  <Input className="w-24" aria-label={t('Tag value')} placeholder={t('value')} value={newTag.value} onChange={(e) => setNewTag({ ...newTag, value: e.target.value })} />
                 </div>
                 {newTag.tagId === -1 && (
                   <div className="flex gap-2">
-                    <Input className="flex-1" placeholder="Tag name" aria-label="New tag name" value={newTag.name} onChange={(e) => setNewTag({ ...newTag, name: e.target.value })} />
-                    <input type="color" aria-label="Tag colour" value={newTag.color} onChange={(e) => setNewTag({ ...newTag, color: e.target.value })} className="h-10 w-12 rounded-xl border border-line-strong bg-surface-2 p-1 cursor-pointer" />
+                    <Input className="flex-1" placeholder={t('Tag name')} aria-label={t('New tag name')} value={newTag.name} onChange={(e) => setNewTag({ ...newTag, name: e.target.value })} />
+                    <input type="color" aria-label={t('Tag colour')} value={newTag.color} onChange={(e) => setNewTag({ ...newTag, color: e.target.value })} className="h-10 w-12 rounded-xl border border-line-strong bg-surface-2 p-1 cursor-pointer" />
                   </div>
                 )}
-                {newTag.tagId !== 0 && <Button type="button" size="sm" icon={<Plus className="size-3.5" />} onClick={addTag}>Add tag</Button>}
+                {newTag.tagId !== 0 && <Button type="button" size="sm" icon={<Plus className="size-3.5" />} onClick={addTag}>{t('Add tag')}</Button>}
               </div>
             </Field>
           </Section>
-
-          <Section title="Notifications" subtitle="Who hears about it when this goes down or comes back.">
-            {notifications.length === 0 ? (
-              <div className="text-sm text-muted">
-                No channels yet. <Link to="/settings/notifications" className="text-accent-ink underline">Set up Telegram, email, Discord…</Link>
-              </div>
-            ) : (
-              <div className="space-y-2.5">
-                {notifications.map((n) => (
-                  <Checkbox
-                    key={n.id}
-                    checked={d.notificationIds.includes(n.id)}
-                    onChange={(v) => set('notificationIds', v ? [...d.notificationIds, n.id] : d.notificationIds.filter((x) => x !== n.id))}
-                    label={<span className="inline-flex items-center gap-2"><Bell className="size-3.5 text-muted" />{n.name}<span className="text-[12px] text-subtle">{n.type}</span>{n.isDefault && <span className="text-[11px] text-accent-ink">default</span>}</span>}
-                  />
-                ))}
-              </div>
-            )}
-          </Section>
         </div>
       </div>
 
-      <div className="fixed bottom-0 left-0 right-0 lg:left-64 z-20 border-t border-line bg-surface/85 backdrop-blur-xl">
+      <div className="fixed bottom-0 start-0 end-0 lg:start-64 z-20 border-t border-line bg-surface/85 backdrop-blur-xl">
         <div className="max-w-[1300px] px-4 sm:px-6 lg:px-8 py-3 flex items-center justify-end gap-2">
-          <Button type="button" variant="ghost" onClick={() => nav(-1)}>Cancel</Button>
-          <Button type="submit" variant="primary" loading={busy} icon={<Save className="size-4" />}>{mode === 'edit' ? 'Save changes' : 'Create monitor'}</Button>
+          <Button type="button" variant="ghost" onClick={() => nav(-1)}>{t('Cancel')}</Button>
+          <Button type="submit" variant="primary" loading={busy} icon={<Save className="size-4" />}>{mode === 'edit' ? t('Save changes') : t('Create monitor')}</Button>
         </div>
       </div>
+      <NotificationDialog open={notifOpen} onClose={() => setNotifOpen(false)} initialType="telegram"
+        onSaved={(nt) => setD((cur) => (cur ? { ...cur, notificationIds: [...new Set([...cur.notificationIds, nt.id])] } : cur))} />
     </form>
   )
 }

@@ -299,6 +299,42 @@ CREATE TABLE backpack_panels (
   updated_at INTEGER NOT NULL
 );
 `,
+	// v2 — agents, owner, flags, private status API, page language.
+	`
+ALTER TABLE monitors ADD COLUMN country TEXT NOT NULL DEFAULT '';
+ALTER TABLE users ADD COLUMN is_owner INTEGER NOT NULL DEFAULT 0;
+UPDATE users SET is_owner = 1 WHERE id = (SELECT MIN(id) FROM users WHERE role = 'admin');
+ALTER TABLE status_pages ADD COLUMN language TEXT NOT NULL DEFAULT 'auto';
+ALTER TABLE status_pages ADD COLUMN show_uptime INTEGER NOT NULL DEFAULT 1;
+ALTER TABLE status_pages ADD COLUMN show_latency INTEGER NOT NULL DEFAULT 1;
+ALTER TABLE status_pages ADD COLUMN show_banner INTEGER NOT NULL DEFAULT 1;
+CREATE TABLE agents (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  name TEXT NOT NULL,
+  token_hash TEXT NOT NULL UNIQUE,
+  token_prefix TEXT NOT NULL,
+  country TEXT NOT NULL DEFAULT '',
+  interval INTEGER NOT NULL DEFAULT 20,
+  auto_import INTEGER NOT NULL DEFAULT 1,
+  group_monitor_id INTEGER REFERENCES monitors(id) ON DELETE SET NULL,
+  created_at INTEGER NOT NULL,
+  last_seen INTEGER NOT NULL DEFAULT 0,
+  last_ip TEXT NOT NULL DEFAULT '',
+  version TEXT NOT NULL DEFAULT '',
+  hostname TEXT NOT NULL DEFAULT ''
+);
+CREATE TABLE status_api_keys (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  name TEXT NOT NULL,
+  prefix TEXT NOT NULL,
+  key_hash TEXT NOT NULL UNIQUE,
+  status_page_id INTEGER NOT NULL REFERENCES status_pages(id) ON DELETE CASCADE,
+  allowed_origins TEXT NOT NULL DEFAULT '',
+  created_at INTEGER NOT NULL,
+  last_used INTEGER NOT NULL DEFAULT 0,
+  active INTEGER NOT NULL DEFAULT 1
+);
+`,
 }
 
 func (db *DB) migrate(ctx context.Context) error {

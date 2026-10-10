@@ -84,7 +84,75 @@
   --shadow-pop: 0 24px 64px -16px rgb(16 24 16 / 0.25), 0 0 0 1px var(--border);
 }
 
+/* Persian: Vazirmatn first, so digits and letters come from one family. */
+html[lang="fa"] {
+  --font-sans: "Vazirmatn Variable", ui-sans-serif, system-ui, sans-serif;
+  --font-display: "Vazirmatn Variable", ui-sans-serif, system-ui, sans-serif;
+}
+html[lang="fa"] .font-display { letter-spacing: 0; }
+
 /* ---------- status page skins ---------- */
+/* Zen: nothing but the status. Follows the visitor's light/dark preference. */
+.sp[data-sp-theme="zen"] {
+  color-scheme: light;
+  --bg: #f7f7f4;
+  --surface: #ffffff;
+  --surface-2: #f3f3ef;
+  --surface-3: #ecece7;
+  --border: #ebebe6;
+  --border-strong: #dcdcd6;
+  --text: #17181a;
+  --text-2: #64666b;
+  --text-3: #9a9ca1;
+  --accent: #16a34a;
+  --accent-ink: #15803d;
+  --accent-soft: #e8f6ec;
+  --on-accent: #ffffff;
+  --up: #22c55e;
+  --down: #ef4444;
+  --pending: #f59e0b;
+  --maint: #6366f1;
+  --chart: #22c55e;
+  --bar-empty: #e7e7e2;
+  --shadow-card: 0 1px 2px rgb(0 0 0 / 0.03), 0 12px 40px -24px rgb(0 0 0 / 0.18);
+}
+@media (prefers-color-scheme: dark) {
+  .sp[data-sp-theme="zen"] {
+    color-scheme: dark;
+    --bg: #0b0c0d;
+    --surface: #121315;
+    --surface-2: #17191b;
+    --surface-3: #1e2023;
+    --border: #1f2124;
+    --border-strong: #2a2d31;
+    --text: #f3f4f5;
+    --text-2: #9b9fa6;
+    --text-3: #6b6f76;
+    --accent: #4ade80;
+    --accent-ink: #4ade80;
+    --accent-soft: rgb(74 222 128 / 0.1);
+    --on-accent: #052e14;
+    --up: #34d399;
+    --down: #f87171;
+    --pending: #fbbf24;
+    --maint: #818cf8;
+    --chart: #34d399;
+    --bar-empty: #1f2124;
+    --shadow-card: 0 1px 0 rgb(255 255 255 / 0.03) inset;
+  }
+}
+@keyframes breathe {
+  0%, 100% { transform: scale(1); opacity: 1; }
+  50% { transform: scale(1.9); opacity: 0; }
+}
+.breathe::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: 9999px;
+  background: currentColor;
+  animation: breathe 2.6s ease-out infinite;
+}
 .sp[data-sp-theme="aurora"] {
   color-scheme: dark;
   --bg: #050806;
@@ -271,5 +339,29 @@ button:disabled { cursor: not-allowed; }
     animation-iteration-count: 1 !important;
     transition-duration: 0.01ms !important;
     scroll-behavior: auto !important;
+  }
+}
+
+/* Rows kept left-to-right so time runs the same way as the bars, while each
+   label inside still reads in its own direction (Persian "۷ ساعت پیش"). */
+.bidi-auto > *,
+.bidi-auto > * > * {
+  unicode-bidi: plaintext;
+}
+
+@layer base {
+  /* User-written text (names, titles) keeps its own reading order with
+     dir="auto" but lines up with the page, not with its own direction.
+     Single-line truncated text shrinks to its content instead: right-aligning an
+     overflowing left-to-right line would cut off its beginning. */
+  :where(html[dir='rtl'] [dir='auto']:not(input, textarea, .truncate)) {
+    text-align: right;
+  }
+  :where(html[dir='ltr'] [dir='auto']:not(input, textarea, .truncate)) {
+    text-align: left;
+  }
+  :where(html[dir] [dir='auto'].truncate) {
+    width: fit-content;
+    max-width: 100%;
   }
 }

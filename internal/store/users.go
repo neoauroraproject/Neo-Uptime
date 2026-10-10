@@ -6,15 +6,16 @@ import (
 	"errors"
 )
 
-const userCols = `id, username, password_hash, role, totp_secret, totp_enabled, created_at, last_login`
+const userCols = `id, username, password_hash, role, totp_secret, totp_enabled, created_at, last_login, is_owner`
 
 func scanUser(s scanner) (*User, error) {
 	var u User
-	var totp int
-	if err := s.Scan(&u.ID, &u.Username, &u.PasswordHash, &u.Role, &u.TOTPSecret, &totp, &u.CreatedAt, &u.LastLogin); err != nil {
+	var totp, owner int
+	if err := s.Scan(&u.ID, &u.Username, &u.PasswordHash, &u.Role, &u.TOTPSecret, &totp, &u.CreatedAt, &u.LastLogin, &owner); err != nil {
 		return nil, err
 	}
 	u.TOTPEnabled = totp == 1
+	u.IsOwner = owner == 1
 	return &u, nil
 }
 
@@ -64,8 +65,8 @@ func (db *DB) GetUserByName(ctx context.Context, name string) (*User, error) {
 // CreateUser inserts u and sets u.ID.
 func (db *DB) CreateUser(ctx context.Context, u *User) error {
 	u.CreatedAt = now()
-	res, err := db.w.ExecContext(ctx, `INSERT INTO users (username, password_hash, role, totp_secret, totp_enabled, created_at)
-		VALUES (?,?,?,?,?,?)`, u.Username, u.PasswordHash, u.Role, u.TOTPSecret, b2i(u.TOTPEnabled), u.CreatedAt)
+	res, err := db.w.ExecContext(ctx, `INSERT INTO users (username, password_hash, role, totp_secret, totp_enabled, created_at, is_owner)
+		VALUES (?,?,?,?,?,?,?)`, u.Username, u.PasswordHash, u.Role, u.TOTPSecret, b2i(u.TOTPEnabled), u.CreatedAt, b2i(u.IsOwner))
 	if err != nil {
 		return err
 	}

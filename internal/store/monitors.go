@@ -9,7 +9,7 @@ import (
 
 const monitorCols = `id, name, type, parent_id, active, interval, retry_interval, max_retries,
   timeout, resend_interval, upside_down, description, config, push_token, sort_order,
-  created_at, updated_at`
+  created_at, updated_at, country`
 
 type scanner interface{ Scan(dest ...any) error }
 
@@ -24,7 +24,7 @@ func scanMonitor(s scanner) (*Monitor, error) {
 	)
 	err := s.Scan(&m.ID, &m.Name, &m.Type, &parent, &active, &m.Interval, &m.RetryInterval,
 		&m.MaxRetries, &m.Timeout, &m.ResendInterval, &upside, &m.Description, &config,
-		&pushTok, &m.SortOrder, &m.CreatedAt, &m.UpdatedAt)
+		&pushTok, &m.SortOrder, &m.CreatedAt, &m.UpdatedAt, &m.Country)
 	if err != nil {
 		return nil, err
 	}
@@ -158,10 +158,10 @@ func (db *DB) CreateMonitor(ctx context.Context, m *Monitor) error {
 	return db.tx(ctx, func(tx *sql.Tx) error {
 		res, err := tx.ExecContext(ctx, `INSERT INTO monitors (name, type, parent_id, active, interval,
 			retry_interval, max_retries, timeout, resend_interval, upside_down, description, config,
-			push_token, sort_order, created_at, updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+			push_token, sort_order, created_at, updated_at, country) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
 			m.Name, m.Type, nullableID(m.ParentID), b2i(m.Active), m.Interval, m.RetryInterval,
 			m.MaxRetries, m.Timeout, m.ResendInterval, b2i(m.UpsideDown), m.Description, string(cfg),
-			nullablePush(m.PushToken), m.SortOrder, t, t)
+			nullablePush(m.PushToken), m.SortOrder, t, t, m.Country)
 		if err != nil {
 			return err
 		}
@@ -177,10 +177,10 @@ func (db *DB) UpdateMonitor(ctx context.Context, m *Monitor) error {
 	return db.tx(ctx, func(tx *sql.Tx) error {
 		res, err := tx.ExecContext(ctx, `UPDATE monitors SET name=?, type=?, parent_id=?, active=?,
 			interval=?, retry_interval=?, max_retries=?, timeout=?, resend_interval=?, upside_down=?,
-			description=?, config=?, push_token=?, sort_order=?, updated_at=? WHERE id=?`,
+			description=?, config=?, push_token=?, sort_order=?, updated_at=?, country=? WHERE id=?`,
 			m.Name, m.Type, nullableID(m.ParentID), b2i(m.Active), m.Interval, m.RetryInterval,
 			m.MaxRetries, m.Timeout, m.ResendInterval, b2i(m.UpsideDown), m.Description, string(cfg),
-			nullablePush(m.PushToken), m.SortOrder, m.UpdatedAt, m.ID)
+			nullablePush(m.PushToken), m.SortOrder, m.UpdatedAt, m.Country, m.ID)
 		if err != nil {
 			return err
 		}

@@ -39,6 +39,40 @@ type Event struct {
 	Downtime time.Duration `json:"-"`
 	// CertDays is the days left on a certificate, for cert events.
 	CertDays int `json:"certDays,omitempty"`
+	// Lang is the message language: "en" (default) or "fa".
+	Lang string `json:"-"`
+	// TZ is the zone times are written in; empty means UTC.
+	TZ string `json:"-"`
+}
+
+func (e Event) fa() bool { return e.Lang == "fa" }
+
+// faDigits writes Western digits as Persian ones.
+func faDigits(s string) string {
+	r := []rune(s)
+	for i, c := range r {
+		if c >= '0' && c <= '9' {
+			r[i] = '۰' + (c - '0')
+		}
+	}
+	return string(r)
+}
+
+func (e Event) when() string {
+	t := e.Time
+	label := "UTC"
+	if e.TZ != "" {
+		if loc, err := time.LoadLocation(e.TZ); err == nil {
+			t, label = t.In(loc), e.TZ
+		}
+	} else {
+		t = t.UTC()
+	}
+	s := t.Format("2006-01-02 15:04:05") + " " + label
+	if e.fa() {
+		return faDigits(s)
+	}
+	return s
 }
 
 // StatusWord is UP / DOWN / PENDING / MAINTENANCE.
@@ -87,6 +121,16 @@ func (e Event) Color() int {
 
 // Title is a one-line summary.
 func (e Event) Title() string {
+	if e.fa() {
+		switch e.Kind {
+		case "test":
+			return "🧪 پیام آزمایشی Neo Uptime"
+		case "cert":
+			return fmt.Sprintf("⚠️ [%s] گواهی SSL تا %s روز دیگر منقضی می‌شود", e.MonitorName, faDigits(fmt.Sprint(e.CertDays)))
+		}
+		words := map[int]string{StatusUp: "دوباره در دسترس است", StatusDown: "قطع شد", StatusPending: "در انتظار بررسی", StatusMaintenance: "در حالت تعمیرات"}
+		return fmt.Sprintf("%s [%s] %s", statusDot(e.Status), e.MonitorName, words[e.Status])
+	}
 	switch e.Kind {
 	case "test":
 		return "🧪 Neo Uptime test notification"
@@ -98,24 +142,68 @@ func (e Event) Title() string {
 
 // Lines is the body as label/value pairs, for providers with rich layouts.
 func (e Event) Lines() [][2]string {
+	lb := func(en, fa string) string {
+		if e.fa() {
+			return fa
+		}
+		return en
+	}
 	if e.Kind == "test" {
-		return [][2]string{{"Message", "If you can read this, the channel works."}}
+		return [][2]string{{lb("Message", "پیام"), lb("If you can read this, the channel works.", "اگر این پیام را می‌بینید، این کانال درست کار می‌کند.")}}
 	}
 	var l [][2]string
 	if e.Msg != "" {
-		l = append(l, [2]string{"Message", e.Msg})
+		l = append(l, [2]string{lb("Message", "پیام"), e.Msg})
 	}
 	if e.Target != "" {
-		l = append(l, [2]string{"Target", e.Target})
+		l = append(l, [2]string{lb("Target", "مقصد"), e.Target})
 	}
 	if e.Ping != nil && e.Status == StatusUp {
-		l = append(l, [2]string{"Response", fmt.Sprintf("%.0f ms", *e.Ping)})
+		v := fmt.Sprintf("%.0f ms", *e.Ping)
+		if e.fa() {
+			v = faDigits(fmt.Sprintf("%.0f", *e.Ping)) + " میلی‌ثانیه"
+		}
+		l = append(l, [2]string{lb("Response", "زمان پاسخ"), v})
 	}
 	if e.Downtime > 0 {
-		l = append(l, [2]string{"Downtime", humanDuration(e.Downtime)})
+		v := humanDuration(e.Downtime)
+		if e.fa() {
+			v = faDuration(e.Downtime)
+		}
+		l = append(l, [2]string{lb("Downtime", "مدت قطعی"), v})
 	}
-	l = append(l, [2]string{"Time", e.Time.UTC().Format("2006-01-02 15:04:05 UTC")})
+	l = append(l, [2]string{lb("Time", "زمان"), e.when()})
 	return l
+}
+
+func faDuration(d time.Duration) string {
+	d = d.Round(time.Second)
+	days := int(d.Hours()) / 24
+	h := int(d.Hours()) % 24
+	m := int(d.Minutes()) % 60
+	s := int(d.Seconds()) % 60
+	var parts []string
+	if days > 0 {
+		parts = append(parts, fmt.Sprintf("%d روز", days))
+	}
+	if h > 0 {
+		parts = append(parts, fmt.Sprintf("%d ساعت", h))
+	}
+	if m > 0 && days == 0 {
+		parts = append(parts, fmt.Sprintf("%d دقیقه", m))
+	}
+	if len(parts) == 0 {
+		parts = append(parts, fmt.Sprintf("%d ثانیه", s))
+	}
+	return faDigits(strings.Join(parts, " و "))
+}
+
+// LinkLabel is the text of the dashboard link.
+func (e Event) LinkLabel() string {
+	if e.fa() {
+		return "باز کردن داشبورد"
+	}
+	return "Open dashboard"
 }
 
 // Text is the full plain-text message.
@@ -175,7 +263,10 @@ type Provider struct {
 
 var providers = map[string]*Provider{}
 
-func register(p *Provider) { providers[p.Type] = p }
+func register(p *Provider) {
+	p.Fields = append(p.Fields, Field{Key: "language", Label: "Message language", Type: "select", Options: []string{"en", "fa"}, Default: "en"})
+	providers[p.Type] = p
+}
 
 // Providers lists every provider, grouped and sorted for display.
 func Providers() []*Provider {
@@ -202,6 +293,9 @@ func Send(ctx context.Context, typ string, cfg map[string]string, e Event) error
 		if f.Required && strings.TrimSpace(cfg[f.Key]) == "" {
 			return fmt.Errorf("%s is required", f.Label)
 		}
+	}
+	if e.Lang == "" {
+		e.Lang = cfg["language"]
 	}
 	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()

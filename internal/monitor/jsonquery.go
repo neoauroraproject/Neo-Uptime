@@ -33,33 +33,47 @@ func evalJSONQuery(doc []byte, path, op, expected string) (bool, string, error) 
 		return false, "missing", nil
 	}
 	gs := jsonString(got)
+	ok, err := compareValues(gs, op, expected)
+	return ok, gs, err
+}
+
+func jsonUnmarshal(s string, v any) error { return json.Unmarshal([]byte(s), v) }
+
+// compareValues applies a comparison operator to two values as text, or as
+// numbers for the ordering operators.
+func compareValues(gs, op, expected string) (bool, error) {
+	if op == "" {
+		op = "=="
+	}
 	switch op {
 	case "==":
-		return gs == expected, gs, nil
+		return gs == expected, nil
 	case "!=":
-		return gs != expected, gs, nil
+		return gs != expected, nil
 	case "contains":
-		return strings.Contains(gs, expected), gs, nil
+		return strings.Contains(gs, expected), nil
 	case "notcontains":
-		return !strings.Contains(gs, expected), gs, nil
+		return !strings.Contains(gs, expected), nil
+	case "exists":
+		return true, nil
 	case "<", "<=", ">", ">=":
-		a, err1 := strconv.ParseFloat(gs, 64)
-		b, err2 := strconv.ParseFloat(expected, 64)
+		a, err1 := strconv.ParseFloat(strings.TrimSpace(gs), 64)
+		b, err2 := strconv.ParseFloat(strings.TrimSpace(expected), 64)
 		if err1 != nil || err2 != nil {
-			return false, gs, fmt.Errorf("%s needs numbers, got %q and %q", op, gs, expected)
+			return false, fmt.Errorf("%s needs numbers, got %q and %q", op, gs, expected)
 		}
 		switch op {
 		case "<":
-			return a < b, gs, nil
+			return a < b, nil
 		case "<=":
-			return a <= b, gs, nil
+			return a <= b, nil
 		case ">":
-			return a > b, gs, nil
+			return a > b, nil
 		default:
-			return a >= b, gs, nil
+			return a >= b, nil
 		}
 	}
-	return false, gs, fmt.Errorf("unknown operator %q", op)
+	return false, fmt.Errorf("unknown operator %q", op)
 }
 
 func opLabel(op string) string {

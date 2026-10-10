@@ -18,16 +18,17 @@ import (
 // monitorView is a monitor together with what is known about it right now.
 type monitorView struct {
 	*store.Monitor
-	Last        *store.Heartbeat  `json:"last"`
-	Uptime24    float64           `json:"uptime24"`
-	Uptime30    float64           `json:"uptime30"`
-	AvgPing24   float64           `json:"avgPing24"`
-	Cert        *monitor.CertInfo `json:"cert,omitempty"`
-	Tunnel      *backpack.Tunnel  `json:"tunnel,omitempty"`
-	System      *backpack.System  `json:"system,omitempty"`
-	NextCheck   int64             `json:"nextCheck"`
-	Maintenance bool              `json:"maintenance"`
-	Target      string            `json:"target"`
+	Last        *store.Heartbeat   `json:"last"`
+	Uptime24    float64            `json:"uptime24"`
+	Uptime30    float64            `json:"uptime30"`
+	AvgPing24   float64            `json:"avgPing24"`
+	Cert        *monitor.CertInfo  `json:"cert,omitempty"`
+	Agent       *monitor.AgentInfo `json:"agent,omitempty"`
+	Tunnel      *backpack.Tunnel   `json:"tunnel,omitempty"`
+	System      *backpack.System   `json:"system,omitempty"`
+	NextCheck   int64              `json:"nextCheck"`
+	Maintenance bool               `json:"maintenance"`
+	Target      string             `json:"target"`
 }
 
 // redact hides credentials from read-only callers.
@@ -37,6 +38,8 @@ func redact(m *store.Monitor) *store.Monitor {
 	c.Config.ConnectionString = ""
 	c.Config.Headers = ""
 	c.Config.Body = ""
+	c.Config.Password = ""
+	c.Config.Secret = ""
 	c.PushToken = ""
 	return &c
 }
@@ -59,7 +62,7 @@ func (s *Server) views(ctx context.Context, list []*store.Monitor, who *caller) 
 			mm = redact(m)
 		}
 		v := monitorView{
-			Monitor: mm, Last: st.Last, Cert: st.Cert, Tunnel: st.Tunnel, System: st.System,
+			Monitor: mm, Last: st.Last, Cert: st.Cert, Tunnel: st.Tunnel, System: st.System, Agent: st.Agent,
 			NextCheck: st.NextCheck, Target: monitor.Target(m),
 			Uptime24: -1, Uptime30: -1, AvgPing24: -1,
 			Maintenance: m.Active && s.mgr.InMaintenance(m.ID),
@@ -235,7 +238,44 @@ func (s *Server) normalize(ctx context.Context, m *store.Monitor, existing *stor
 		if _, err := s.db.GetPanel(ctx, c.PanelID); err != nil {
 			return fmt.Errorf("choose a BackPack panel")
 		}
+	case monitor.TypeAgent, monitor.TypeAgentTunnel:
+		if _, err := s.db.GetAgent(ctx, c.AgentID); err != nil {
+			return fmt.Errorf("choose a server (agent)")
+		}
+		if m.Type == monitor.TypeAgentTunnel {
+			if c.Source != "kariz" {
+				c.Source = "backpack"
+			}
+			if strings.TrimSpace(c.TunnelName) == "" {
+				return fmt.Errorf("choose a tunnel")
+			}
+		}
+	case monitor.TypeSMTP, monitor.TypeRadius, monitor.TypeSteam, monitor.TypeTLS, monitor.TypeGRPC, monitor.TypeMQTT, monitor.TypeKafka:
+		if strings.TrimSpace(c.Hostname) == "" {
+			return fmt.Errorf("hostname is required")
+		}
+		if m.Type == monitor.TypeRadius && c.Secret == "" {
+			return fmt.Errorf("RADIUS shared secret is required")
+		}
+	case monitor.TypeUDP:
+		if strings.TrimSpace(c.Hostname) == "" || c.Port < 1 || c.Port > 65535 {
+			return fmt.Errorf("hostname and a port between 1 and 65535 are required")
+		}
+	case monitor.TypeSNMP:
+		if strings.TrimSpace(c.Hostname) == "" || strings.TrimSpace(c.OID) == "" {
+			return fmt.Errorf("hostname and OID are required")
+		}
+	case monitor.TypeWebSocket:
+		c.URL = strings.TrimSpace(c.URL)
+		if !strings.HasPrefix(c.URL, "ws://") && !strings.HasPrefix(c.URL, "wss://") {
+			return fmt.Errorf("URL must start with ws:// or wss://")
+		}
+	case monitor.TypeMongo, monitor.TypeMSSQL:
+		if strings.TrimSpace(c.ConnectionString) == "" {
+			return fmt.Errorf("connection string is required")
+		}
 	}
+	m.Country = normCountry(m.Country)
 	if m.Type != monitor.TypePush {
 		m.PushToken = ""
 	}

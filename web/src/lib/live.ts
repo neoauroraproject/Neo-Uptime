@@ -1,6 +1,7 @@
 import { useEffect } from 'react'
 import { useApp } from './store'
 import { toast } from '../components/ui'
+import { t } from './i18n'
 
 // useLiveEvents keeps the store current from the server's event stream and
 // refreshes the slower numbers (uptime percentages) once a minute.
@@ -30,11 +31,16 @@ export function useLiveEvents() {
       }
     })
     es.addEventListener('monitors', reload)
+    let agentTimer: ReturnType<typeof setTimeout> | undefined
+    es.addEventListener('agent', () => {
+      clearTimeout(agentTimer)
+      agentTimer = setTimeout(() => useApp.getState().loadAgents().catch(() => {}), 1500)
+    })
     es.addEventListener('maintenance', reload)
     es.addEventListener('notification-error', (e) => {
       try {
         const d = JSON.parse((e as MessageEvent).data)
-        toast.error(`Notification "${d.notification}" failed`, d.error)
+        toast.error(t('Notification "{name}" failed', { name: d.notification }), d.error)
       } catch {
         /* ignore */
       }

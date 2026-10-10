@@ -46,6 +46,11 @@ jobs:
               -o dist/neo-uptime ./cmd/neo-uptime
             tar -czf dist/neo-uptime-linux-$t.tar.gz -C dist neo-uptime -C .. README.md LICENSE install.sh
             rm dist/neo-uptime
+            CGO_ENABLED=0 GOOS=linux GOARCH=$arch GOARM=$goarm go build -trimpath \
+              -ldflags "-s -w -X github.com/neoauroraproject/Neo-Uptime/internal/version.Version=${TAG}" \
+              -o dist/neo-uptime-agent ./cmd/neo-uptime-agent
+            tar -czf dist/neo-uptime-agent-linux-$t.tar.gz -C dist neo-uptime-agent -C .. LICENSE agent.sh
+            rm dist/neo-uptime-agent
           done
           cd dist && sha256sum *.tar.gz > checksums.txt && cat checksums.txt
       - name: Publish release

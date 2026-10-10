@@ -51,6 +51,7 @@ Usage:
   neo-uptime reset-password <user> [new-password]
   neo-uptime disable-2fa <user>
   neo-uptime list-users
+  neo-uptime set-owner <user>          make an admin the owner (who alone issues status API keys)
   neo-uptime version
 
 Flags (or environment):
@@ -91,6 +92,8 @@ func main() {
 		disable2FA(*data, rest)
 	case "list-users":
 		listUsers(*data)
+	case "set-owner":
+		setOwner(*data, rest)
 	case "help", "-h", "--help":
 		usage()
 	default:
@@ -124,13 +127,14 @@ func serve(host string, port int, dataDir, certFile, keyFile string) {
 
 	hub := api.NewHub()
 	bp := backpack.NewCache()
-	mgr := monitor.NewManager(db, bp, hub)
+	agents := monitor.NewAgentHub()
+	mgr := monitor.NewManager(db, bp, agents, hub)
 	if err := mgr.Start(ctx); err != nil {
 		log.Fatalf("starting monitors: %v", err)
 	}
 	srv := &http.Server{
 		Addr:              net.JoinHostPort(host, strconv.Itoa(port)),
-		Handler:           api.New(db, mgr, bp, hub, web.FS(), dataDir),
+		Handler:           api.New(db, mgr, bp, agents, hub, web.FS(), dataDir),
 		ReadHeaderTimeout: 15 * time.Second,
 		IdleTimeout:       120 * time.Second,
 		MaxHeaderBytes:    1 << 20,
@@ -235,6 +239,33 @@ func listUsers(dataDir string) {
 		if u.TOTPEnabled {
 			tf = " (2FA)"
 		}
+		if u.IsOwner {
+			tf += " (owner)"
+		}
 		fmt.Printf("%-24s %s%s\n", u.Username, u.Role, tf)
 	}
+}
+
+func setOwner(dataDir string, args []string) {
+	if len(args) < 1 {
+		fmt.Fprintln(os.Stderr, "usage: neo-uptime set-owner <username>")
+		os.Exit(2)
+	}
+	db := openDB(dataDir)
+	defer db.Close()
+	ctx := context.Background()
+	u, err := db.GetUserByName(ctx, args[0])
+	if err != nil {
+		log.Fatalf("no user %q", args[0])
+	}
+	if u.Role != "admin" {
+		u.Role = "admin"
+		if err := db.UpdateUser(ctx, u); err != nil {
+			log.Fatal(err)
+		}
+	}
+	if err := db.SetOwner(ctx, u.ID); err != nil {
+		log.Fatal(err)
+	}
+	fmt.Printf("%s is now the owner.\n", u.Username)
 }
