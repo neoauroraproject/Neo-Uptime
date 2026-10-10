@@ -1,0 +1,11 @@
+/neo-uptime
+/neo-uptime.exe
+/mock-backpack.exe
+/dist/
+/data/
+web/node_modules/
+web/dist/
+*.db
+*.db-wal
+*.db-shm
+*.exe~

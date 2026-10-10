@@ -1,0 +1,9 @@
+{
+  "name": "Neo Uptime",
+  "short_name": "Neo Uptime",
+  "start_url": "/dashboard",
+  "display": "standalone",
+  "background_color": "#070908",
+  "theme_color": "#070908",
+  "icons": [{ "src": "/icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" }]
+}

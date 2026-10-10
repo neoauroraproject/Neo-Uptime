@@ -1,0 +1,275 @@
+@import "tailwindcss";
+
+@custom-variant dark (&:where([data-theme=dark], [data-theme=dark] *));
+
+/* Semantic tokens → Tailwind utilities (bg-surface, text-muted, border-line …).
+   `inline` keeps them as live var() references, so every theme below — the
+   admin's dark/light and each status-page skin — is just a set of variables. */
+@theme inline {
+  --color-bg: var(--bg);
+  --color-surface: var(--surface);
+  --color-surface-2: var(--surface-2);
+  --color-surface-3: var(--surface-3);
+  --color-line: var(--border);
+  --color-line-strong: var(--border-strong);
+  --color-fg: var(--text);
+  --color-muted: var(--text-2);
+  --color-subtle: var(--text-3);
+  --color-accent: var(--accent);
+  --color-accent-ink: var(--accent-ink);
+  --color-accent-soft: var(--accent-soft);
+  --color-on-accent: var(--on-accent);
+  --color-up: var(--up);
+  --color-down: var(--down);
+  --color-pending: var(--pending);
+  --color-maint: var(--maint);
+  --color-paused: var(--paused);
+  --color-chart: var(--chart);
+  --font-sans: "Work Sans Variable", "Vazirmatn Variable", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-display: "Outfit Variable", "Vazirmatn Variable", ui-sans-serif, system-ui, sans-serif;
+  --font-mono: "JetBrains Mono Variable", ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
+}
+
+/* ---------- admin: dark (default) ---------- */
+:root,
+[data-theme="dark"] {
+  color-scheme: dark;
+  --bg: #070908;
+  --surface: #0d110e;
+  --surface-2: #121813;
+  --surface-3: #19211b;
+  --border: #1d2820;
+  --border-strong: #2b3a2f;
+  --text: #eef4ef;
+  --text-2: #a1ada4;
+  --text-3: #6f7b72;
+  --accent: #a3e635;
+  --accent-ink: #b9f25d;
+  --accent-soft: rgb(163 230 53 / 0.12);
+  --on-accent: #0b1203;
+  --up: #22c55e;
+  --down: #f04444;
+  --pending: #f5a524;
+  --maint: #3b82f6;
+  --paused: #5f6b63;
+  --chart: #22c55e;
+  --glow: rgb(34 197 94 / 0.10);
+  --shadow-card: 0 1px 0 rgb(255 255 255 / 0.03) inset, 0 12px 32px -18px rgb(0 0 0 / 0.8);
+  --shadow-pop: 0 24px 64px -16px rgb(0 0 0 / 0.75), 0 0 0 1px var(--border-strong);
+}
+
+[data-theme="light"] {
+  color-scheme: light;
+  --bg: #f3f4f1;
+  --surface: #ffffff;
+  --surface-2: #f6f7f4;
+  --surface-3: #eceee9;
+  --border: #e3e6df;
+  --border-strong: #d1d5cc;
+  --text: #121612;
+  --text-2: #586159;
+  --text-3: #8a938b;
+  --accent: #a3e635;
+  --accent-ink: #3f6212;
+  --accent-soft: rgb(132 204 22 / 0.14);
+  --on-accent: #0b1203;
+  --up: #16a34a;
+  --down: #dc2626;
+  --pending: #d97706;
+  --maint: #2563eb;
+  --paused: #8a938b;
+  --chart: #16a34a;
+  --glow: rgb(163 230 53 / 0.18);
+  --shadow-card: 0 1px 2px rgb(16 24 16 / 0.04), 0 8px 24px -12px rgb(16 24 16 / 0.10);
+  --shadow-pop: 0 24px 64px -16px rgb(16 24 16 / 0.25), 0 0 0 1px var(--border);
+}
+
+/* ---------- status page skins ---------- */
+.sp[data-sp-theme="aurora"] {
+  color-scheme: dark;
+  --bg: #050806;
+  --surface: #0b100c;
+  --surface-2: #111812;
+  --surface-3: #18211a;
+  --border: #1a251d;
+  --border-strong: #26352a;
+  --text: #f1f7f2;
+  --text-2: #a3b0a6;
+  --text-3: #6d7a70;
+  --accent: #22c55e;
+  --accent-ink: #4ade80;
+  --accent-soft: rgb(34 197 94 / 0.12);
+  --on-accent: #03140a;
+  --chart: #22c55e;
+  --banner-bg: linear-gradient(135deg, rgb(34 197 94 / 0.16), rgb(34 197 94 / 0.04));
+  --banner-border: rgb(34 197 94 / 0.35);
+  --bar-empty: #1a231c;
+}
+.sp[data-sp-theme="clarity"] {
+  color-scheme: light;
+  --bg: #f5f6f8;
+  --surface: #ffffff;
+  --surface-2: #f7f8fa;
+  --surface-3: #eef0f4;
+  --border: #e6e8ee;
+  --border-strong: #d6dae3;
+  --text: #1c2230;
+  --text-2: #5a6273;
+  --text-3: #8c93a3;
+  --accent: #4f46e5;
+  --accent-ink: #4338ca;
+  --accent-soft: #eef0ff;
+  --on-accent: #ffffff;
+  --up: #3dbb7e;
+  --down: #e5484d;
+  --pending: #f0a020;
+  --maint: #3b82f6;
+  --chart: #2f8cf0;
+  --banner-bg: #eef0ff;
+  --banner-border: #4f46e5;
+  --bar-empty: #e7e9ef;
+  --shadow-card: 0 1px 2px rgb(28 34 48 / 0.04), 0 10px 30px -14px rgb(28 34 48 / 0.16);
+}
+.sp[data-sp-theme="lime"] {
+  color-scheme: light;
+  --bg: #efefec;
+  --surface: #ffffff;
+  --surface-2: #f6f6f3;
+  --surface-3: #ececea;
+  --border: #e4e4e0;
+  --border-strong: #d4d4cf;
+  --text: #121212;
+  --text-2: #5b5b57;
+  --text-3: #8d8d88;
+  --accent: #d4f36b;
+  --accent-ink: #3f5b06;
+  --accent-soft: #eefbc4;
+  --on-accent: #121212;
+  --up: #2a2a2a;
+  --down: #e5484d;
+  --pending: #e6a019;
+  --maint: #5b7cf0;
+  --chart: #1d1d1d;
+  --banner-bg: #d4f36b;
+  --banner-border: #c2e14f;
+  --bar-empty: #e9e9e5;
+  --shadow-card: 0 1px 2px rgb(0 0 0 / 0.03);
+}
+.sp[data-sp-theme="noir"] {
+  color-scheme: dark;
+  --bg: #0a0a0a;
+  --surface: #141414;
+  --surface-2: #1b1b1b;
+  --surface-3: #222222;
+  --border: #232323;
+  --border-strong: #303030;
+  --text: #f5f5f2;
+  --text-2: #a8a8a2;
+  --text-3: #74746f;
+  --accent: #d4f36b;
+  --accent-ink: #d9f77d;
+  --accent-soft: rgb(212 243 107 / 0.12);
+  --on-accent: #121212;
+  --up: #d4f36b;
+  --down: #ff5a5f;
+  --pending: #f5b03a;
+  --maint: #7c9bff;
+  --chart: #d4f36b;
+  --banner-bg: #d4f36b;
+  --banner-border: #d4f36b;
+  --bar-empty: #232323;
+  --shadow-card: none;
+}
+
+/* ---------- base ---------- */
+html {
+  -webkit-text-size-adjust: 100%;
+  text-rendering: optimizeLegibility;
+}
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font-sans);
+  font-size: 14px;
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+.app-bg {
+  background:
+    radial-gradient(1200px 600px at 75% -10%, var(--glow), transparent 60%),
+    radial-gradient(800px 500px at -10% 110%, var(--glow), transparent 60%),
+    var(--bg);
+}
+::selection {
+  background: var(--accent);
+  color: var(--on-accent);
+}
+:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  border-radius: 6px;
+}
+input, select, textarea, button { font: inherit; color: inherit; }
+button { cursor: pointer; }
+button:disabled { cursor: not-allowed; }
+.tnum { font-variant-numeric: tabular-nums; }
+.font-display { letter-spacing: -0.02em; }
+
+/* thin scrollbars that match the surface */
+* { scrollbar-width: thin; scrollbar-color: var(--border-strong) transparent; }
+*::-webkit-scrollbar { width: 10px; height: 10px; }
+*::-webkit-scrollbar-thumb { background: var(--border-strong); border-radius: 10px; border: 3px solid transparent; background-clip: content-box; }
+
+/* card with dotted grid like the BackPack monitor cards */
+.dot-grid {
+  background-image: radial-gradient(color-mix(in srgb, var(--text) 9%, transparent) 1px, transparent 1px);
+  background-size: 16px 16px;
+}
+
+.card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 18px;
+  box-shadow: var(--shadow-card);
+}
+
+@keyframes pulse-ring {
+  0% { box-shadow: 0 0 0 0 color-mix(in srgb, currentColor 55%, transparent); }
+  70% { box-shadow: 0 0 0 7px transparent; }
+  100% { box-shadow: 0 0 0 0 transparent; }
+}
+.live-dot { animation: pulse-ring 2s cubic-bezier(.4,0,.6,1) infinite; }
+
+@keyframes beat-in {
+  from { transform: scaleY(0.3); opacity: 0; }
+  to { transform: scaleY(1); opacity: 1; }
+}
+.beat-new { animation: beat-in 260ms cubic-bezier(.2,.8,.2,1) both; transform-origin: bottom; }
+
+@keyframes fade-up {
+  from { opacity: 0; transform: translateY(6px); }
+  to { opacity: 1; transform: none; }
+}
+.fade-up { animation: fade-up 240ms cubic-bezier(.2,.8,.2,1) both; }
+
+@keyframes shimmer {
+  from { background-position: -400px 0; }
+  to { background-position: 400px 0; }
+}
+.skeleton {
+  background: linear-gradient(90deg, var(--surface-2) 0, var(--surface-3) 40%, var(--surface-2) 80%);
+  background-size: 800px 100%;
+  animation: shimmer 1.4s linear infinite;
+  border-radius: 8px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
