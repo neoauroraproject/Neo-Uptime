@@ -348,6 +348,10 @@ CREATE TABLE uploads (
   created_at INTEGER NOT NULL
 );
 `,
+	// v4 — details a status page leaves out (comma-separated keys).
+	`
+ALTER TABLE status_pages ADD COLUMN hide TEXT NOT NULL DEFAULT '';
+`,
 }
 
 func (db *DB) migrate(ctx context.Context) error {

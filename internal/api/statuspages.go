@@ -129,6 +129,13 @@ func (s *Server) handleDeleteStatusPage(w http.ResponseWriter, r *http.Request) 
 }
 
 // normPage checks a page from the editor and fills in defaults.
+// hideKeys are the details a status page can leave out. Hidden data is not
+// sent at all, so it cannot be read from the page either.
+var hideKeys = []string{
+	"flag", "status", "location", "graph", "bars", // every service
+	"direction", "transport", "profile", "port", "traffic", "connected", // tunnels
+}
+
 func normPage(p *store.StatusPage) error {
 	p.Slug = strings.ToLower(strings.TrimSpace(p.Slug))
 	p.Title = strings.TrimSpace(p.Title)
@@ -169,6 +176,13 @@ func normPage(p *store.StatusPage) error {
 		return err
 	}
 	p.Domain = d
+	hide := []string{}
+	for _, k := range hideKeys {
+		if slices.Contains(p.Hide, k) {
+			hide = append(hide, k)
+		}
+	}
+	p.Hide = hide
 	if p.Groups == nil {
 		p.Groups = []store.StatusPageGroup{}
 	}
@@ -251,18 +265,50 @@ type publicBeat struct {
 type publicTunnel struct {
 	Source       string               `json:"source,omitempty"`
 	State        string               `json:"state"`
-	Direction    string               `json:"direction"`
-	Carrier      string               `json:"carrier"`
+	Direction    string               `json:"direction,omitempty"`
+	Carrier      string               `json:"carrier,omitempty"`
 	Preset       string               `json:"preset,omitempty"`
 	TunnelPort   string               `json:"tunnelPort,omitempty"`
 	Uptime       string               `json:"uptime,omitempty"`
-	InBytes      uint64               `json:"inBytes"`
-	OutBytes     uint64               `json:"outBytes"`
-	TotalBytes   uint64               `json:"totalBytes"`
+	InBytes      *uint64              `json:"inBytes,omitempty"` // nil when traffic is hidden
+	OutBytes     *uint64              `json:"outBytes,omitempty"`
+	TotalBytes   *uint64              `json:"totalBytes,omitempty"`
 	PeerCountry  string               `json:"peerCountry,omitempty"`
 	PeerLocation string               `json:"peerLocation,omitempty"`
 	KCPLoss      float64              `json:"kcpLoss,omitempty"`
 	Rates        []backpack.RatePoint `json:"rates,omitempty"`
+}
+
+// publicTunnelOf is what a status page shows of a tunnel, without the
+// details the page hides.
+func publicTunnelOf(p *store.StatusPage, t *backpack.Tunnel) *publicTunnel {
+	pt := &publicTunnel{Source: t.Source, State: t.State, KCPLoss: t.KCPLossPercent}
+	if !p.Hidden("flag") {
+		pt.PeerCountry = t.PeerCountry
+	}
+	if !p.Hidden("location") {
+		pt.PeerLocation = t.PeerLocation
+	}
+	if !p.Hidden("direction") {
+		pt.Direction = t.Direction
+	}
+	if !p.Hidden("transport") {
+		pt.Carrier = firstSet(t.Carrier, t.Transport)
+	}
+	if !p.Hidden("profile") {
+		pt.Preset = t.Preset
+	}
+	if !p.Hidden("port") {
+		pt.TunnelPort = t.TunnelPort
+	}
+	if !p.Hidden("connected") {
+		pt.Uptime = t.Uptime
+	}
+	if !p.Hidden("traffic") {
+		in, out, total := t.InBytes, t.OutBytes, t.TotalBytes
+		pt.InBytes, pt.OutBytes, pt.TotalBytes, pt.Rates = &in, &out, &total, t.Rates
+	}
+	return pt
 }
 
 type publicMonitor struct {
@@ -427,6 +473,9 @@ func (s *Server) publicPage(ctx context.Context, p *store.StatusPage) map[string
 			}
 			st := states[m.ID]
 			pm := publicMonitor{ID: m.ID, Name: m.Name, Type: m.Type, Country: m.Country, Status: -1, Uptime24: -1, Uptime30: -1, AvgPing: -1, Beats: []publicBeat{}}
+			if p.Hidden("flag") {
+				pm.Country = ""
+			}
 			if ref.ShowURL {
 				pm.URL = monitor.Target(m)
 			}
@@ -451,12 +500,7 @@ func (s *Server) publicPage(ctx context.Context, p *store.StatusPage) map[string
 				pm.CertDays = &d
 			}
 			if t := st.Tunnel; t != nil {
-				pm.Tunnel = &publicTunnel{
-					Source: t.Source, State: t.State, Direction: t.Direction, Carrier: t.Carrier, Preset: t.Preset,
-					TunnelPort: t.TunnelPort, Uptime: t.Uptime, InBytes: t.InBytes, OutBytes: t.OutBytes,
-					TotalBytes: t.TotalBytes, PeerCountry: t.PeerCountry, PeerLocation: t.PeerLocation,
-					KCPLoss: t.KCPLossPercent, Rates: t.Rates,
-				}
+				pm.Tunnel = publicTunnelOf(p, t)
 			}
 			for _, h := range beats[m.ID] {
 				pm.Beats = append(pm.Beats, publicBeat{S: h.Status, T: h.Time, P: h.Ping})
@@ -534,6 +578,7 @@ func (s *Server) publicPage(ctx context.Context, p *store.StatusPage) map[string
 		"showPoweredBy": p.ShowPoweredBy, "showCharts": p.ShowCharts, "refreshInterval": p.RefreshInterval,
 		"published": p.Published, "language": p.Language, "showUptime": p.ShowUptime,
 		"showLatency": p.ShowLatency, "showBanner": p.ShowBanner, "barDays": p.BarDays, "domain": p.Domain,
+		"hide": p.Hide,
 	}
 	return map[string]any{
 		"page": page, "groups": groups, "overall": overall, "incidents": incidents,

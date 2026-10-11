@@ -199,6 +199,9 @@ export interface Provider { type: string; name: string; group: string; fields: P
 
 export type Theme = 'zen' | 'aurora' | 'clarity' | 'lime' | 'noir'
 
+/** Details a status page can leave out; hidden data is not sent at all. */
+export type HideKey = 'flag' | 'status' | 'location' | 'graph' | 'bars' | 'direction' | 'transport' | 'profile' | 'port' | 'traffic' | 'connected'
+
 export interface StatusPageGroup { id?: number; name: string; monitors: { monitorId: number; showUrl: boolean }[] }
 
 export interface StatusPage {
@@ -225,6 +228,7 @@ export interface StatusPage {
   showBanner: boolean
   domain: string
   barDays: number
+  hide: HideKey[]
   createdAt: number
   updatedAt: number
   groups: StatusPageGroup[]

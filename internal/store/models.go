@@ -202,9 +202,20 @@ type StatusPage struct {
 	ShowBanner      bool              `json:"showBanner"`
 	Domain          string            `json:"domain"`  // own host name, e.g. status.example.com
 	BarDays         int               `json:"barDays"` // days shown when BarMode is "days"
+	Hide            []string          `json:"hide"`    // details visitors do not see, e.g. "port"
 	CreatedAt       int64             `json:"createdAt"`
 	UpdatedAt       int64             `json:"updatedAt"`
 	Groups          []StatusPageGroup `json:"groups"`
+}
+
+// Hidden reports whether the page leaves out a detail, such as "port".
+func (p *StatusPage) Hidden(key string) bool {
+	for _, k := range p.Hide {
+		if k == key {
+			return true
+		}
+	}
+	return false
 }
 
 // StatusPageGroup is a titled section of a status page.

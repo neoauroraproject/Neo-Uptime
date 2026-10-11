@@ -5,7 +5,7 @@ import { api, uploadImage } from '../lib/api'
 import { useApp } from '../lib/store'
 import { clsx, fmtDate, fmtDateTime } from '../lib/format'
 import { useT } from '../lib/i18n'
-import type { HttpsStatus, Incident, StatusPage, Theme } from '../lib/types'
+import type { HideKey, HttpsStatus, Incident, StatusPage, Theme } from '../lib/types'
 import { Alert, Badge, Card, CopyButton, Field, IconButton, Input, Segmented, Select, Skeleton, Spinner, Switch, Textarea, Button, confirm, toast } from '../components/ui'
 import { ThemeSwatch, domainURL, pageURL, slugify, themeMeta } from './StatusPages'
 import { TypeIcon } from '../components/meta'
@@ -115,6 +115,86 @@ function DomainState({ domain, https, onRefresh }: { domain: string; https: Http
         <p className="text-[12px] text-muted">{t('Let’s Encrypt can only issue once the A record points here; a failed try is allowed a few times an hour.')}</p>
       )}
       {role !== 'admin' && https && !https.enabled && <p className="text-muted">{t('An admin can turn on HTTPS for this domain.')}</p>}
+    </div>
+  )
+}
+
+type VisItem = { label: string; on: boolean; set: (v: boolean) => void; hint?: string }
+
+function VisGroup({ title, note, items }: { title: string; note?: string; items: VisItem[] }) {
+  const t = useT()
+  const allOn = items.every((i) => i.on)
+  return (
+    <div className="space-y-2">
+      <div className="flex items-center justify-between gap-2">
+        <span className="text-[12px] uppercase tracking-wider font-semibold text-subtle">{title}</span>
+        <button type="button" className="text-[12px] text-muted hover:text-fg" onClick={() => items.forEach((i) => i.set(!allOn))}>{allOn ? t('Hide all') : t('Show all')}</button>
+      </div>
+      {note && <p className="text-[12px] text-muted -mt-1">{note}</p>}
+      <div className="grid grid-cols-2 gap-2">
+        {items.map((i) => (
+          <button key={i.label} type="button" role="switch" aria-checked={i.on} aria-label={i.label} title={i.hint} onClick={() => i.set(!i.on)}
+            className={clsx('flex items-center gap-2 min-h-9 px-3 py-1.5 rounded-xl border text-[13px] text-start transition-colors', i.on ? 'border-accent/40 bg-accent-soft text-fg' : 'border-line text-subtle hover:text-muted hover:border-line-strong')}>
+            {i.on ? <Eye className="size-4 shrink-0 text-accent-ink" /> : <EyeOff className="size-4 shrink-0" />}
+            <span className={clsx('min-w-0', !i.on && 'line-through decoration-1')}>{i.label}</span>
+          </button>
+        ))}
+      </div>
+    </div>
+  )
+}
+
+type BoolKey = 'showBanner' | 'showPoweredBy' | 'showLatency' | 'showUptime' | 'showCharts' | 'showTags' | 'showCertExpiry'
+
+/** Every part of the page a visitor can see, each one on or off. */
+function Visibility({ p, up }: { p: StatusPage; up: (patch: Partial<StatusPage>) => void }) {
+  const t = useT()
+  // "Hide all" changes several items in one click. `up` starts from this
+  // render's page, so each change carries the ones made before it.
+  let pending: Partial<StatusPage> = {}
+  const change = (patch: Partial<StatusPage>) => {
+    pending = { ...pending, ...patch }
+    up(pending)
+  }
+  const hideItem = (k: HideKey, label: string, hint?: string): VisItem => ({
+    label, hint, on: !p.hide?.includes(k),
+    set: (v) => {
+      const cur = (pending.hide ?? p.hide ?? []).filter((x) => x !== k)
+      change({ hide: v ? cur : [...cur, k] })
+    },
+  })
+  const flag = (key: BoolKey, label: string, hint?: string): VisItem => ({ label, hint, on: p[key], set: (v) => change({ [key]: v } as Partial<StatusPage>) })
+  const cardsOnly = p.theme === 'zen' || p.layout === 'list'
+  return (
+    <div className="space-y-5 rounded-2xl border border-line p-4">
+      <div>
+        <p className="text-sm font-semibold">{t('What visitors see')}</p>
+        <p className="text-[12.5px] text-muted mt-0.5">{t('Hidden details are not sent to visitors at all.')}</p>
+      </div>
+      <VisGroup title={t('Page')} items={[
+        flag('showBanner', t('Overall status line'), t('“All systems operational” at the top.')),
+        flag('showPoweredBy', t('“Powered by Neo Uptime”')),
+      ]} />
+      <VisGroup title={t('Every service')} items={[
+        hideItem('flag', t('Flag')),
+        hideItem('status', t('Status label'), t('Operational / Down next to the name.')),
+        flag('showLatency', t('Response time')),
+        flag('showUptime', t('Uptime percentage')),
+        hideItem('bars', t('Status bars')),
+        hideItem('graph', t('Small chart'), t('The response-time line on cards.')),
+        flag('showCharts', t('Response time charts'), t('Visitors can expand a day / week / month chart per service.')),
+        flag('showTags', t('Tags')),
+        flag('showCertExpiry', t('Certificate expiry')),
+      ]} />
+      <VisGroup title={t('Tunnels')} note={cardsOnly ? t('Tunnel details show in the Cards layout.') : undefined} items={[
+        hideItem('location', t('Location')),
+        hideItem('direction', t('Mode (direct / reverse)')),
+        hideItem('transport', t('Transport')),
+        hideItem('profile', t('Profile')),
+        hideItem('port', t('Port')),
+        hideItem('traffic', t('Traffic')),
+        hideItem('connected', t('Connected time')),
+      ]} />
     </div>
   )
 }
@@ -361,15 +441,7 @@ export default function StatusPageEditor() {
                     </Select>
                   </Field>
                 ) : <p className="-mt-2 text-[12.5px] text-muted">{t('One bar per check, the last 100 — what the dashboard shows.')}</p>}
-                <div className="space-y-3.5">
-                  <Switch checked={p.showBanner} onChange={(v) => up({ showBanner: v })} label={t('Overall status line')} description={t('“All systems operational” at the top.')} />
-                  <Switch checked={p.showUptime} onChange={(v) => up({ showUptime: v })} label={t('Uptime percentage')} />
-                  <Switch checked={p.showLatency} onChange={(v) => up({ showLatency: v })} label={t('Response time')} />
-                  <Switch checked={p.showCharts} onChange={(v) => up({ showCharts: v })} label={t('Response time charts')} description={t('Visitors can expand a day / week / month chart per service.')} />
-                  <Switch checked={p.showTags} onChange={(v) => up({ showTags: v })} label={t('Show tags')} />
-                  <Switch checked={p.showCertExpiry} onChange={(v) => up({ showCertExpiry: v })} label={t('Show certificate expiry')} />
-                  <Switch checked={p.showPoweredBy} onChange={(v) => up({ showPoweredBy: v })} label={t('“Powered by Neo Uptime”')} />
-                </div>
+                <Visibility p={p} up={up} />
                 <div className="grid grid-cols-2 gap-4">
                   <Field label={t('Accent colour')} help={t('Empty uses the theme’s.')}>
                     <div className="flex gap-2">

@@ -138,14 +138,15 @@ type v1Monitor struct {
 	History    []string `json:"history"` // last 30 checks, oldest first: u d p m
 }
 
+// v1Tunn leaves out what the status page hides.
 type v1Tunn struct {
-	Source    string `json:"source,omitempty"`
-	Transport string `json:"transport"`
-	Direction string `json:"direction"`
-	Preset    string `json:"preset,omitempty"`
-	Uptime    string `json:"uptime,omitempty"`
-	BytesIn   uint64 `json:"bytesIn"`
-	BytesOut  uint64 `json:"bytesOut"`
+	Source    string  `json:"source,omitempty"`
+	Transport string  `json:"transport,omitempty"`
+	Direction string  `json:"direction,omitempty"`
+	Preset    string  `json:"preset,omitempty"`
+	Uptime    string  `json:"uptime,omitempty"`
+	BytesIn   *uint64 `json:"bytesIn,omitempty"`
+	BytesOut  *uint64 `json:"bytesOut,omitempty"`
 }
 
 func statusWord(st int, active bool) string {
@@ -204,6 +205,9 @@ func (s *Server) statusV1(ctx context.Context, p *store.StatusPage) map[string]a
 			}
 			st := states[m.ID]
 			v := v1Monitor{ID: m.ID, Name: m.Name, Type: m.Type, Country: m.Country, Status: "unknown", History: []string{}}
+			if p.Hidden("flag") {
+				v.Country = ""
+			}
 			if st.Last != nil {
 				v.Status = statusWord(st.Last.Status, m.Active)
 				v.Latency = st.Last.Ping
@@ -224,11 +228,12 @@ func (s *Server) statusV1(ctx context.Context, p *store.StatusPage) map[string]a
 			u2, ok2 := u30[m.ID]
 			v.Uptime30d = ratioPtr(u2, ok2)
 			if t := st.Tunnel; t != nil {
+				pt := publicTunnelOf(p, t)
 				if v.Country == "" {
 					// Same fallback as the status page: the tunnel peer's country.
-					v.Country = normCountry(t.PeerCountry)
+					v.Country = normCountry(pt.PeerCountry)
 				}
-				v.Tunnel = &v1Tunn{Source: t.Source, Transport: firstSet(t.Carrier, t.Transport), Direction: t.Direction, Preset: t.Preset, Uptime: t.Uptime, BytesIn: t.InBytes, BytesOut: t.OutBytes}
+				v.Tunnel = &v1Tunn{Source: pt.Source, Transport: pt.Carrier, Direction: pt.Direction, Preset: pt.Preset, Uptime: pt.Uptime, BytesIn: pt.InBytes, BytesOut: pt.OutBytes}
 			}
 			for _, h := range beats[m.ID] {
 				v.History = append(v.History, letters[h.Status])

@@ -4,14 +4,15 @@ import { ArrowDown, ArrowUp, ChevronDown, CircleAlert, CircleCheck, CircleX, Inf
 import { api, ApiError } from '../../lib/api'
 import { bytes, clsx, fmtDateTime, fmtWeekdayTime, ms, n, pct, statusKey, timeAgo } from '../../lib/format'
 import { useLang, useT, type Lang } from '../../lib/i18n'
-import type { ChartPoint, Theme } from '../../lib/types'
+import type { ChartPoint, HideKey, Theme } from '../../lib/types'
 import { AreaChart, Columns, DayBars, HeartbeatBar, Sparkline, type DayBucket } from '../../components/charts'
 import { TunnelBadges } from '../../components/tunnel'
 import { Spinner, TagChip, useNow } from '../../components/ui'
 import { Flag } from '../../components/flag'
 
 interface PubBeat { s: 0 | 1 | 2 | 3; t: number; p?: number }
-interface PubTunnel { source?: string; state: string; direction: string; carrier: string; preset?: string; tunnelPort?: string; uptime?: string; inBytes: number; outBytes: number; totalBytes: number; peerCountry?: string; peerLocation?: string; kcpLoss?: number }
+// Hidden details are missing, not empty.
+interface PubTunnel { source?: string; state: string; direction?: string; carrier?: string; preset?: string; tunnelPort?: string; uptime?: string; inBytes?: number; outBytes?: number; totalBytes?: number; peerCountry?: string; peerLocation?: string; kcpLoss?: number }
 interface PubMonitor {
   id: number; name: string; type: string; country?: string; url?: string; tags?: { tagId: number; name: string; color: string; value: string }[]
   status: number; ping: number | null; uptime24: number; uptime30: number; avgPing: number; certDays?: number; tunnel?: PubTunnel
@@ -22,7 +23,7 @@ interface PubPage {
   accentColor: string; logo: string; footer: string; customCss: string; showTags: boolean; showCertExpiry: boolean
   showPoweredBy: boolean; showCharts: boolean; refreshInterval: number; published: boolean
   language: 'auto' | 'en' | 'fa'; showUptime: boolean; showLatency: boolean; showBanner: boolean
-  barDays?: number; domain?: string
+  barDays?: number; domain?: string; hide?: HideKey[]
 }
 interface PubData {
   page: PubPage
@@ -43,6 +44,7 @@ const overallKey = {
 const overallColor = { operational: 'var(--up)', partial: 'var(--pending)', major: 'var(--down)', maintenance: 'var(--maint)', unknown: 'var(--text-3)' }
 
 const cc = (m: PubMonitor) => m.country || m.tunnel?.peerCountry?.toLowerCase() || ''
+const shows = (page: PubPage, k: HideKey) => !page.hide?.includes(k)
 
 function Linkify({ text }: { text: string }) {
   const parts = text.split(/(https?:\/\/[^\s)]+)/g)
@@ -183,6 +185,16 @@ function ZenRow({ m, page }: { m: PubMonitor; page: PubPage }) {
   const flag = cc(m)
   const days = page.barMode === 'days' && m.days
   const ratio = days ? m.uptime30 : m.uptime24
+  const extras = (page.showUptime && ratio >= 0) || page.showCharts ? (
+    <span className="flex items-center gap-3">
+      {page.showUptime && ratio >= 0 && <span className="tnum font-medium text-muted">{t('{p} uptime', { p: pct(ratio, 2) })}</span>}
+      {page.showCharts && (
+        <button onClick={() => setOpen(!open)} aria-expanded={open} className="inline-flex items-center gap-1 text-muted hover:text-fg">
+          {t('Response time')}<ChevronDown className={clsx('size-3.5 transition-transform', open && 'rotate-180')} />
+        </button>
+      )}
+    </span>
+  ) : null
   return (
     <div className="px-5 sm:px-6 py-5">
       <div className="flex items-center gap-3">
@@ -192,23 +204,18 @@ function ZenRow({ m, page }: { m: PubMonitor; page: PubPage }) {
           {m.url && <p className="text-[12px] text-subtle truncate font-mono" dir="ltr">{m.url}</p>}
         </div>
         {page.showLatency && m.status === 1 && m.ping != null && <span className="hidden sm:inline text-[12.5px] text-subtle tnum">{ms(m.ping)}</span>}
-        <StatusLabel s={m.status} />
+        {shows(page, 'status') && <StatusLabel s={m.status} />}
       </div>
-      <div className="mt-3.5">
-        <Bars m={m} page={page} height={26} barWidth={5} />
-        <div className="mt-2 flex items-center justify-between text-[11.5px] text-subtle bidi-auto" dir="ltr">
-          <span>{days ? t('{n} days ago', { n: page.barDays || 90 }) : m.beats.length ? timeAgo(m.beats[0].t) : ''}</span>
-          <span className="flex items-center gap-3">
-            {page.showUptime && ratio >= 0 && <span className="tnum font-medium text-muted">{t('{p} uptime', { p: pct(ratio, 2) })}</span>}
-            {page.showCharts && (
-              <button onClick={() => setOpen(!open)} aria-expanded={open} className="inline-flex items-center gap-1 text-muted hover:text-fg">
-                {t('Response time')}<ChevronDown className={clsx('size-3.5 transition-transform', open && 'rotate-180')} />
-              </button>
-            )}
-          </span>
-          <span>{days ? t('Today') : t('Now')}</span>
+      {shows(page, 'bars') ? (
+        <div className="mt-3.5">
+          <Bars m={m} page={page} height={26} barWidth={5} />
+          <div className="mt-2 flex items-center justify-between text-[11.5px] text-subtle bidi-auto" dir="ltr">
+            <span>{days ? t('{n} days ago', { n: page.barDays || 90 }) : m.beats.length ? timeAgo(m.beats[0].t) : ''}</span>
+            {extras}
+            <span>{days ? t('Today') : t('Now')}</span>
+          </div>
         </div>
-      </div>
+      ) : extras && <div className="mt-2 text-[11.5px] text-subtle">{extras}</div>}
       {open && <ChartBlock slug={page.slug} id={m.id} theme="zen" />}
     </div>
   )
@@ -323,6 +330,12 @@ function MonitorRow({ m, page, theme }: { m: PubMonitor; page: PubPage; theme: T
   const [open, setOpen] = useState(false)
   const days = page.barMode === 'days' && m.days
   const flag = cc(m)
+  const avg = page.showLatency && m.avgPing >= 0 ? t('avg {v}', { v: ms(m.avgPing) }) : ''
+  const latencyNote = page.showCharts ? (
+    <button onClick={() => setOpen(!open)} aria-expanded={open} className="inline-flex items-center gap-1 text-muted hover:text-fg">
+      {avg || t('Response time')}<ChevronDown className={clsx('size-3.5 transition-transform', open && 'rotate-180')} />
+    </button>
+  ) : <span className="tnum">{avg}</span>
   return (
     <div className="px-5 sm:px-6 py-4">
       <div className="flex items-center gap-3">
@@ -337,21 +350,19 @@ function MonitorRow({ m, page, theme }: { m: PubMonitor; page: PubPage; theme: T
           </div>
           {m.url && <p className="text-[12.5px] text-muted truncate font-mono mt-0.5" dir="ltr">{m.url}</p>}
         </div>
-        <StatusLabel s={m.status} />
+        {shows(page, 'status') && <StatusLabel s={m.status} />}
         {page.showUptime && <span className="hidden sm:inline w-20 text-end text-[13px] font-semibold tnum">{pct(days ? m.uptime30 : m.uptime24, 2)}</span>}
       </div>
-      <div className="mt-3">
-        <Bars m={m} page={page} barWidth={theme === 'clarity' ? 5 : 6} />
-        <div className="mt-1.5 flex items-center justify-between text-[11.5px] text-subtle bidi-auto" dir="ltr">
-          <span>{days ? t('{n} days ago', { n: page.barDays || 90 }) : m.beats.length ? timeAgo(m.beats[0].t) : ''}</span>
-          {page.showCharts ? (
-            <button onClick={() => setOpen(!open)} aria-expanded={open} className="inline-flex items-center gap-1 text-muted hover:text-fg">
-              {page.showLatency && m.avgPing >= 0 ? t('avg {v}', { v: ms(m.avgPing) }) : t('Response time')}<ChevronDown className={clsx('size-3.5 transition-transform', open && 'rotate-180')} />
-            </button>
-          ) : <span className="tnum">{page.showLatency && m.avgPing >= 0 ? t('avg {v}', { v: ms(m.avgPing) }) : ''}</span>}
-          <span>{days ? t('Today') : t('Now')}</span>
+      {shows(page, 'bars') ? (
+        <div className="mt-3">
+          <Bars m={m} page={page} barWidth={theme === 'clarity' ? 5 : 6} />
+          <div className="mt-1.5 flex items-center justify-between text-[11.5px] text-subtle bidi-auto" dir="ltr">
+            <span>{days ? t('{n} days ago', { n: page.barDays || 90 }) : m.beats.length ? timeAgo(m.beats[0].t) : ''}</span>
+            {latencyNote}
+            <span>{days ? t('Today') : t('Now')}</span>
+          </div>
         </div>
-      </div>
+      ) : (page.showCharts || avg) && <div className="mt-1.5 text-[11.5px] text-subtle">{latencyNote}</div>}
       {open && <ChartBlock slug={page.slug} id={m.id} theme={theme} />}
     </div>
   )
@@ -363,44 +374,64 @@ function MonitorCardPub({ m, page, theme }: { m: PubMonitor; page: PubPage; them
   const pings = m.beats.slice(-40).map((b) => (b.s === 1 ? b.p ?? null : null))
   const cur = m.status === 1 ? m.ping : null
   const flag = cc(m)
+  const tn = m.tunnel
+  // What the page hides is simply missing here, so each part checks for it.
+  const badges = !!tn && !!(tn.direction || tn.carrier || tn.preset || tn.tunnelPort)
+  const traffic = tn?.totalBytes != null
+  const graph = shows(page, 'graph')
+  const bars = shows(page, 'bars')
+  const big = page.showLatency ? 'latency' : page.showUptime ? 'uptime' : null
+  const tunnelLine = tn ? [traffic ? bytes(tn.totalBytes) : '', tn.uptime ? t('up {d}', { d: tn.uptime }) : ''].filter(Boolean).join(' · ') : ''
+  const subLine = tunnelLine || (big === 'latency' && m.avgPing >= 0 ? t('avg {v}', { v: ms(m.avgPing) }) : big === 'uptime' ? t('Uptime 24h') : '')
+  const middle = !!big || graph
+  const foot = bars || traffic || page.showUptime
   return (
     <article className={clsx('bg-surface border border-line flex flex-col overflow-hidden', bento ? 'rounded-[28px]' : 'rounded-[20px]')} style={{ boxShadow: 'var(--shadow-card)' }}>
-      <div className="p-5 pb-0">
+      <div className={clsx('p-5', (middle || foot) && 'pb-0')}>
         <div className="flex items-start justify-between gap-3">
           <div className="flex items-start gap-2.5 min-w-0">
             {flag && <Flag cc={flag} size={26} className="mt-0.5" />}
             <div className="min-w-0">
               <p className="font-display text-lg font-semibold leading-tight truncate" dir="auto">{m.name}</p>
-              {m.tunnel?.peerLocation ? <p className="text-[12.5px] text-muted truncate">{m.tunnel.peerLocation}</p> : m.url ? <p className="text-[12.5px] text-muted truncate font-mono" dir="ltr">{m.url}</p> : null}
+              {tn?.peerLocation ? <p className="text-[12.5px] text-muted truncate">{tn.peerLocation}</p> : m.url ? <p className="text-[12.5px] text-muted truncate font-mono" dir="ltr">{m.url}</p> : null}
             </div>
           </div>
-          <StatusLabel s={m.status} />
+          {shows(page, 'status') && <StatusLabel s={m.status} />}
         </div>
-        {m.tunnel && <TunnelBadges t={m.tunnel} className="mt-3" />}
+        {badges && tn && <TunnelBadges t={tn} className="mt-3" />}
       </div>
-      <div className="px-5 pt-4 grid grid-cols-[auto_1fr] items-end gap-4">
-        <div>
-          {page.showLatency ? (
-            <p className="font-display text-[44px] leading-none font-semibold tnum tracking-tight whitespace-nowrap" dir="ltr">{cur != null ? n(Math.round(cur)) : '—'}{cur != null && <span className="text-base text-muted ms-1">ms</span>}</p>
-          ) : (
-            <p className="font-display text-[36px] leading-none font-semibold tnum tracking-tight">{pct(m.uptime24, 1)}</p>
+      {middle && (
+        <div className={clsx('px-5 pt-4 grid items-end gap-4', big && graph ? 'grid-cols-[auto_1fr]' : 'grid-cols-1')}>
+          {big && (
+            <div>
+              {big === 'latency' ? (
+                <p className="font-display text-[44px] leading-none font-semibold tnum tracking-tight whitespace-nowrap" dir="ltr">{cur != null ? n(Math.round(cur)) : '—'}{cur != null && <span className="text-base text-muted ms-1">ms</span>}</p>
+              ) : (
+                <p className="font-display text-[36px] leading-none font-semibold tnum tracking-tight">{pct(m.uptime24, 1)}</p>
+              )}
+              {subLine && <p className="mt-2 text-[12.5px] text-muted tnum">{subLine}</p>}
+            </div>
           )}
-          <p className="mt-2 text-[12.5px] text-muted tnum">{m.tunnel ? `${bytes(m.tunnel.totalBytes)}${m.tunnel.uptime ? ` · ${t('up {d}', { d: m.tunnel.uptime })}` : ''}` : page.showLatency ? t('avg {v}', { v: ms(m.avgPing) }) : t('Uptime 24h')}</p>
+          {graph && (bento ? <Columns values={pings.map((p) => p ?? 0).slice(-16)} highlight={[15]} height={72} /> : <Sparkline values={pings} height={72} color={m.status === 0 ? 'var(--down)' : 'var(--chart)'} />)}
+          {!big && tunnelLine && <p className="-mt-2 text-[12.5px] text-muted tnum">{tunnelLine}</p>}
         </div>
-        {bento ? <Columns values={pings.map((p) => p ?? 0).slice(-16)} highlight={[15]} height={72} /> : <Sparkline values={pings} height={72} color={m.status === 0 ? 'var(--down)' : 'var(--chart)'} />}
-      </div>
-      <div className="mt-4 px-5 py-4 border-t border-line space-y-2">
-        <Bars m={m} page={page} height={18} barWidth={4} />
-        <div className="flex items-center justify-between text-[12.5px]">
-          {m.tunnel ? (
-            <span className="flex gap-3 text-muted tnum">
-              <span className="inline-flex items-center gap-1"><ArrowDown className="size-3.5" />{bytes(m.tunnel.inBytes)}</span>
-              <span className="inline-flex items-center gap-1"><ArrowUp className="size-3.5" />{bytes(m.tunnel.outBytes)}</span>
-            </span>
-          ) : <span className="text-muted">{t('Uptime 24h')}</span>}
-          {page.showUptime && <span className="font-semibold tnum">{pct(m.uptime24, 2)}</span>}
+      )}
+      {foot && (
+        <div className="mt-4 px-5 py-4 border-t border-line space-y-2">
+          {bars && <Bars m={m} page={page} height={18} barWidth={4} />}
+          {(traffic || page.showUptime) && (
+            <div className="flex items-center justify-between text-[12.5px]">
+              {traffic ? (
+                <span className="flex gap-3 text-muted tnum">
+                  <span className="inline-flex items-center gap-1"><ArrowDown className="size-3.5" />{bytes(tn?.inBytes)}</span>
+                  <span className="inline-flex items-center gap-1"><ArrowUp className="size-3.5" />{bytes(tn?.outBytes)}</span>
+                </span>
+              ) : <span className="text-muted">{t('Uptime 24h')}</span>}
+              {page.showUptime && <span className="font-semibold tnum">{pct(m.uptime24, 2)}</span>}
+            </div>
+          )}
         </div>
-      </div>
+      )}
     </article>
   )
 }

@@ -174,7 +174,9 @@ Scripts written for Kuma keep working after you change the host. If the URL is n
 | **Lime** | **Noir** |
 | <img src="docs/screenshots/status-lime.jpg" alt="Lime theme" /> | <img src="docs/screenshots/status-noir.jpg" alt="Noir theme" /> |
 
-**Zen** is the default for new pages. It shows only the status: a headline, then one quiet row per server with its flag, its bars and its uptime. It follows the visitor's light or dark setting. Each page can be in English, Persian, or follow the visitor's browser, and can hide the banner, uptime, latency and charts.
+**Zen** is the default for new pages. It shows only the status: a headline, then one quiet row per server with its flag, its bars and its uptime. It follows the visitor's light or dark setting. Each page can be in English, Persian, or follow the visitor's browser.
+
+**Choose what visitors see.** Under **Look → What visitors see**, every part of the page can be shown or hidden: the status line, flags, status labels, latency, uptime, bars, the small chart on cards, charts, tags and certificate expiry, and for tunnels their location, mode (direct / reverse), transport, profile, port, traffic and connected time. Hidden details are not sent to the browser at all, and the page's status API key leaves them out too.
 
 Bars show either the last 100 checks (the default, the same history as the dashboard) or one bar per day for the last 7, 14, 30, 60 or 90 days. Upload a logo in the page's **General** tab; it is also the browser-tab icon.
 
@@ -393,6 +395,7 @@ bash <(curl -fsSL https://raw.githubusercontent.com/neoauroraproject/Neo-Uptime/
 - پوسته‌ی **Zen** (پیش‌فرض): فقط وضعیت، بدون هیچ چیز اضافه؛ روشن یا تیره مطابق دستگاه بازدیدکننده، با پرچم هر سرور.
 - نوارها یا ۱۰۰ بررسی آخر را نشان می‌دهند (پیش‌فرض، همان تاریخچه‌ی واقعی داشبورد) یا هر روز یک نوار برای ۷، ۱۴، ۳۰، ۶۰ یا ۹۰ روز اخیر.
 - هر صفحه می‌تواند فارسی، انگلیسی یا خودکار (مطابق مرورگر) باشد.
+- **انتخاب اینکه چه چیزی نمایش داده شود:** در **ظاهر ← چه چیزهایی به بازدیدکننده نشان داده شود** هر بخش را می‌شود نمایش داد یا مخفی کرد: خط وضعیت کلی، پرچم، وضعیت (فعال / قطع)، زمان پاسخ، درصد آپتایم، نوار وضعیت، نمودار کوچک کارت‌ها، نمودارها، برچسب‌ها، انقضای گواهی، و برای تانل‌ها موقعیت، حالت (direct / reverse)، نوع انتقال، پروفایل، پورت، ترافیک و مدت اتصال. موارد مخفی اصلاً برای مرورگر بازدیدکننده فرستاده نمی‌شوند و API وضعیت همان صفحه هم آن‌ها را نمی‌دهد.
 - **API وضعیت:** فقط حساب مالک (اولین حسابی که ساخته شده) می‌تواند در **تنظیمات ← API وضعیت** کلید خصوصی بسازد. هر کلید فقط یک صفحه را می‌خواند و می‌شود آن را به آدرس سایت خودتان محدود کرد. با ویجت آماده (`embed.js`) یا با فراخوانی `GET /api/v1/status/<slug>` وضعیت را در سایت خودتان نشان دهید. نمونه‌ی کد در بخش انگلیسی بالا هست.
 
 ### امکانات
