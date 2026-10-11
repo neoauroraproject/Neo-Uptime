@@ -12,6 +12,7 @@ import { AgentPanel, SystemPanel, TunnelDetails } from '../components/tunnel'
 import { TypeIcon, TypeLabel } from '../components/meta'
 import { Flag, countryName } from '../components/flag'
 import { monitorCountry, monitorState } from './Dashboard'
+import { AlertsBox } from '../components/SlowAlert'
 
 const ranges = [
   { value: 'recent', label: 'Live', ms: 0 },
@@ -203,6 +204,8 @@ export default function MonitorDetail() {
           </div>
         )}
       </div>
+
+      {m.type !== 'group' && <AlertsBox m={m} />}
 
       <Card className="px-5 py-4">
         <div className="flex items-center justify-between text-[13px] mb-3">

@@ -134,18 +134,42 @@ func serve(host string, port int, dataDir, certFile, keyFile string) {
 		log.Fatalf("starting monitors: %v", err)
 	}
 	app := api.New(db, mgr, bp, agents, hub, web.FS(), dataDir)
+	addr := net.JoinHostPort(host, strconv.Itoa(port))
 	// Automatic HTTPS for the panel's and status pages' own domains. It stays
 	// off until it is turned on under Settings → Domains & HTTPS.
-	app.EnableHTTPS(ctx, certs.Config{
+	cfg := certs.Config{
 		HTTPAddr:  ":" + env("NEO_UPTIME_HTTP_PORT", "80"),
 		HTTPSAddr: ":" + env("NEO_UPTIME_HTTPS_PORT", "443"),
 		CacheDir:  filepath.Join(dataDir, "certs"),
 		Directory: env("NEO_UPTIME_ACME_DIRECTORY", ""),
 		CARoots:   env("NEO_UPTIME_ACME_CA_ROOTS", ""),
-	})
+	}
+	ownCert := certFile != "" && keyFile != ""
+	var ln net.Listener
+	if !ownCert {
+		l, err := net.Listen("tcp", addr)
+		if err != nil {
+			log.Fatalf("listening on %s: %v", addr, err)
+		}
+		ln = l
+		// When the panel itself is on the HTTPS or HTTP port, automatic HTTPS
+		// shares it instead of trying to open the same port a second time.
+		switch ":" + strconv.Itoa(port) {
+		case cfg.HTTPSAddr:
+			sp := certs.NewSplitter(l)
+			ln, cfg.Shared = sp.Plain(), sp
+		case cfg.HTTPAddr:
+			cfg.SharedPlain = true
+		}
+	}
+	app.EnableHTTPS(ctx, cfg)
+	var handler http.Handler = app
+	if cfg.SharedPlain {
+		handler = app.PlainHandler()
+	}
 	srv := &http.Server{
-		Addr:              net.JoinHostPort(host, strconv.Itoa(port)),
-		Handler:           app,
+		Addr:              addr,
+		Handler:           handler,
 		ReadHeaderTimeout: 15 * time.Second,
 		IdleTimeout:       120 * time.Second,
 		MaxHeaderBytes:    1 << 20,
@@ -153,7 +177,7 @@ func serve(host string, port int, dataDir, certFile, keyFile string) {
 
 	errc := make(chan error, 1)
 	go func() {
-		if certFile != "" && keyFile != "" {
+		if ownCert {
 			// Read the pair on every handshake so certbot renewals apply
 			// without a restart.
 			srv.TLSConfig = &tls.Config{
@@ -168,7 +192,7 @@ func serve(host string, port int, dataDir, certFile, keyFile string) {
 			return
 		}
 		log.Printf("Neo Uptime %s listening on http://%s (data: %s)", version.Version, srv.Addr, dataDir)
-		errc <- srv.ListenAndServe()
+		errc <- srv.Serve(ln)
 	}()
 
 	select {

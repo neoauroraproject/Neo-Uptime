@@ -20,6 +20,7 @@ import (
 	"slices"
 	"strings"
 	"sync"
+	"syscall"
 	"time"
 
 	"golang.org/x/crypto/acme"
@@ -47,6 +48,13 @@ type Config struct {
 	CacheDir  string // where certificates and the ACME account key are kept
 	Directory string // ACME directory URL; empty means Let's Encrypt
 	CARoots   string // optional PEM file of extra roots for a private ACME server
+
+	// Shared is set when the panel itself listens on the HTTPS port: TLS
+	// connections then arrive through it instead of a second listener.
+	Shared *Splitter
+	// SharedPlain is set when the panel listens on the HTTP port; the panel
+	// then answers ACME challenges through PlainHandler.
+	SharedPlain bool
 }
 
 // DomainStatus is one row of the HTTPS settings page.
@@ -87,6 +95,8 @@ type Manager struct {
 	src     Source
 	handler http.Handler
 
+	applyMu sync.Mutex // one Apply at a time: two would race for the same ports
+
 	mu        sync.Mutex
 	ac        *autocert.Manager
 	email     string
@@ -125,6 +135,8 @@ func (m *Manager) Run(ctx context.Context) {
 
 // Apply starts, restarts or stops the listeners to match the settings.
 func (m *Manager) Apply(ctx context.Context) {
+	m.applyMu.Lock()
+	defer m.applyMu.Unlock()
 	enabled, email := m.src.HTTPSSettings(ctx)
 	m.mu.Lock()
 	if !enabled {
@@ -147,13 +159,19 @@ func (m *Manager) Apply(ctx context.Context) {
 		Email:      email,
 		Client:     m.client(),
 	}
-	tlsLn, err := net.Listen("tcp", m.cfg.HTTPSAddr)
-	if err != nil {
-		m.mu.Lock()
-		m.listenErr = fmt.Sprintf("cannot listen on %s: %v", m.cfg.HTTPSAddr, err)
-		m.mu.Unlock()
-		log.Printf("https: %v", err)
-		return
+	var tlsLn net.Listener
+	if m.cfg.Shared != nil {
+		tlsLn = m.cfg.Shared.TLS()
+	} else {
+		ln, err := net.Listen("tcp", m.cfg.HTTPSAddr)
+		if err != nil {
+			m.mu.Lock()
+			m.listenErr = listenError(m.cfg.HTTPSAddr, err)
+			m.mu.Unlock()
+			log.Printf("https: %v", err)
+			return
+		}
+		tlsLn = ln
 	}
 	tlsCfg := ac.TLSConfig()
 	tlsCfg.MinVersion = tls.VersionTLS12
@@ -174,8 +192,10 @@ func (m *Manager) Apply(ctx context.Context) {
 	// Port 80 is optional: TLS-ALPN challenges work on 443 alone.
 	var plainSrv *http.Server
 	httpErr := ""
-	if plainLn, err := net.Listen("tcp", m.cfg.HTTPAddr); err != nil {
-		httpErr = fmt.Sprintf("cannot listen on %s: %v — HTTP will not redirect to HTTPS", m.cfg.HTTPAddr, err)
+	if m.cfg.SharedPlain {
+		// The panel already listens on the HTTP port and answers challenges.
+	} else if plainLn, err := net.Listen("tcp", m.cfg.HTTPAddr); err != nil {
+		httpErr = listenError(m.cfg.HTTPAddr, err) + " — HTTP will not redirect to HTTPS"
 		log.Printf("https: %s", httpErr)
 	} else {
 		plainSrv = &http.Server{
@@ -196,6 +216,40 @@ func (m *Manager) Apply(ctx context.Context) {
 	m.mu.Unlock()
 	log.Printf("https: automatic certificates on %s (and %s)", m.cfg.HTTPSAddr, m.cfg.HTTPAddr)
 	m.warm(false)
+}
+
+// listenError explains a failed listen; a busy port is the usual cause.
+func listenError(addr string, err error) string {
+	_, port, _ := net.SplitHostPort(addr)
+	if errors.Is(err, syscall.EADDRINUSE) || strings.Contains(err.Error(), "address already in use") || strings.Contains(err.Error(), "Only one usage") {
+		return fmt.Sprintf("port %s is used by another program (find it with: ss -ltnp 'sport = :%s'). Stop that program, or move Neo Uptime's panel to port %s so they share it", port, port, port)
+	}
+	return fmt.Sprintf("cannot listen on %s: %v", addr, err)
+}
+
+// PlainHandler wraps the panel when it listens on the HTTP port itself: ACME
+// HTTP-01 challenges and the DNS self-check are answered there, and the rest
+// goes to the panel (which redirects configured domains to HTTPS).
+func (m *Manager) PlainHandler(app http.Handler) http.Handler {
+	inner := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if tok, ok := strings.CutPrefix(r.URL.Path, checkPrefix); ok {
+			if _, ok := m.checks.Load(tok); ok {
+				_, _ = io.WriteString(w, tok)
+				return
+			}
+		}
+		app.ServeHTTP(w, r)
+	})
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		m.mu.Lock()
+		ac := m.ac
+		m.mu.Unlock()
+		if ac == nil {
+			inner.ServeHTTP(w, r)
+			return
+		}
+		ac.HTTPHandler(inner).ServeHTTP(w, r)
+	})
 }
 
 func (m *Manager) stop() {
@@ -486,7 +540,7 @@ func (m *Manager) pointsHere(name string) ([]string, bool) {
 
 func (m *Manager) selfCheck(ctx context.Context, name string) bool {
 	m.mu.Lock()
-	running := m.plainSrv != nil
+	running := m.plainSrv != nil || (m.cfg.SharedPlain && m.ac != nil)
 	m.mu.Unlock()
 	if !running {
 		return false

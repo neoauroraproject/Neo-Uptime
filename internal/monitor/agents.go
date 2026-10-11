@@ -2,8 +2,11 @@ package monitor
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"log"
+	"slices"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -252,7 +255,7 @@ func (mg *Manager) IngestAgentReport(ctx context.Context, a *store.Agent, r *age
 		go func() {
 			ictx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 			defer cancel()
-			if _, err := mg.ImportAgentTunnels(ictx, a.ID, nil); err != nil {
+			if _, err := mg.ImportAgentTunnels(ictx, a.ID, nil, nil); err != nil {
 				log.Printf("agent %s: auto-import: %v", a.Name, err)
 			}
 		}()
@@ -265,20 +268,21 @@ func agentKey(source, name string) string { return source + "\x00" + name }
 // ImportAgentTunnels makes sure an agent has its group and server monitor,
 // and creates a monitor for each reported tunnel that has none. keys, when
 // given, limits it to "source/name" entries.
-func (mg *Manager) ImportAgentTunnels(ctx context.Context, agentID int64, keys []string) (int, error) {
+func (mg *Manager) ImportAgentTunnels(ctx context.Context, agentID int64, keys []string, opt *ImportOptions) (*ImportResult, error) {
 	mg.importMu.Lock()
 	defer mg.importMu.Unlock()
+	res := &ImportResult{MonitorIDs: []int64{}}
 	a, err := mg.db.GetAgent(ctx, agentID)
 	if err != nil {
-		return 0, err
+		return res, err
 	}
 	st := mg.env.Agents.Get(a.ID)
 	if st == nil || st.Report == nil {
-		return 0, fmt.Errorf("agent %s has not reported yet", a.Name)
+		return res, fmt.Errorf("agent %s has not reported yet", a.Name)
 	}
 	existing, err := mg.db.ListMonitors(ctx)
 	if err != nil {
-		return 0, err
+		return res, err
 	}
 	have := map[string]bool{}
 	hasServer := false
@@ -289,6 +293,7 @@ func (mg *Manager) ImportAgentTunnels(ctx context.Context, agentID int64, keys [
 		switch m.Type {
 		case TypeAgent:
 			hasServer = true
+			res.ServerMonitorID = m.ID
 		case TypeAgentTunnel:
 			have[agentKey(m.Config.Source, m.Config.TunnelName)] = true
 		}
@@ -297,6 +302,20 @@ func (mg *Manager) ImportAgentTunnels(ctx context.Context, agentID int64, keys [
 	for _, k := range keys {
 		src, name, _ := strings.Cut(k, "/")
 		want[agentKey(src, name)] = true
+	}
+	// Tunnels someone chose not to watch are remembered, so auto-import only
+	// adds tunnels that are really new.
+	skipped := mg.skippedTunnels(ctx, a.ID)
+	if opt != nil && len(opt.Skip) > 0 {
+		for _, k := range opt.Skip {
+			skipped[k] = true
+		}
+	}
+	if keys != nil || (opt != nil && len(opt.Skip) > 0) {
+		for _, k := range keys {
+			delete(skipped, k)
+		}
+		mg.saveSkipped(ctx, a.ID, skipped)
 	}
 	type item struct {
 		source string
@@ -310,32 +329,37 @@ func (mg *Manager) ImportAgentTunnels(ctx context.Context, agentID int64, keys [
 		}
 		for _, t := range s.Tunnels {
 			k := agentKey(src, t.Name)
-			if have[k] || (keys != nil && !want[k]) {
+			if have[k] || (keys != nil && !want[k]) || (keys == nil && skipped[src+"/"+t.Name]) {
 				continue
 			}
 			todo = append(todo, item{src, t})
 		}
 	}
+	if a.GroupMonitorID != nil {
+		res.GroupID = *a.GroupMonitorID
+	}
 	if hasServer && len(todo) == 0 {
-		return 0, nil
+		return res, nil
 	}
 
 	gid, err := mg.ensureAgentGroup(ctx, a)
 	if err != nil {
-		return 0, err
+		return res, err
 	}
-	notifs, _ := mg.db.DefaultNotificationIDs(ctx)
-	interval := max(a.Interval*2, 30)
+	res.GroupID = gid
+	o := mg.importOptions(ctx, opt, max(a.Interval*2, 30))
 	if !hasServer {
 		m := &store.Monitor{
-			Name: a.Name, Type: TypeAgent, ParentID: &gid, Active: true, Interval: interval, RetryInterval: interval,
+			Name: a.Name, Type: TypeAgent, ParentID: &gid, Active: true, Interval: o.Interval, RetryInterval: o.Interval,
 			MaxRetries: 1, Timeout: 10, Config: store.MonitorConfig{AgentID: a.ID}, Country: a.Country,
-			NotificationIDs: nonNil(notifs), Description: "Server health reported by neo-uptime-agent.",
+			NotificationIDs: nonNil(o.NotificationIDs), Description: "Server health reported by neo-uptime-agent.",
 		}
 		if err := mg.db.CreateMonitor(ctx, m); err != nil {
-			return 0, err
+			return res, err
 		}
 		mg.Upsert(m)
+		res.ServerMonitorID = m.ID
+		res.MonitorIDs = append(res.MonitorIDs, m.ID)
 	}
 	n := 0
 	for _, it := range todo {
@@ -348,22 +372,110 @@ func (mg *Manager) ImportAgentTunnels(ctx context.Context, agentID int64, keys [
 			country = a.Country
 		}
 		m := &store.Monitor{
-			Name: it.t.Name, Type: TypeAgentTunnel, ParentID: &gid, Active: true, Interval: interval, RetryInterval: interval,
+			Name: it.t.Name, Type: TypeAgentTunnel, ParentID: &gid, Active: true, Interval: o.Interval, RetryInterval: o.Interval,
 			MaxRetries: 1, Timeout: 10, Country: strings.ToLower(country),
-			Config:          store.MonitorConfig{AgentID: a.ID, Source: it.source, TunnelName: it.t.Name},
-			NotificationIDs: nonNil(notifs),
+			Config: store.MonitorConfig{AgentID: a.ID, Source: it.source, TunnelName: it.t.Name,
+				LatencyAlertMs: o.LatencyAlertMs, LatencyAlertFor: o.LatencyAlertFor},
+			NotificationIDs: nonNil(o.NotificationIDs),
 			Description:     strings.TrimSpace(fmt.Sprintf("%s · %s %s %s", label, strings.ToUpper(it.t.Direction), strings.ToUpper(it.t.Carrier), it.t.Preset)),
 		}
 		if err := mg.db.CreateMonitor(ctx, m); err != nil {
-			return n, err
+			return res, err
 		}
 		mg.Upsert(m)
+		res.MonitorIDs = append(res.MonitorIDs, m.ID)
 		n++
 	}
 	if n > 0 {
 		log.Printf("agent %s: imported %d tunnel(s)", a.Name, n)
 	}
-	return n, nil
+	res.Tunnels = n
+	return res, nil
+}
+
+// ImportOptions sets up the monitors an import creates. Nil fields mean the
+// defaults: the default channels, the source's interval and the slow alert
+// set for new tunnels under Settings.
+type ImportOptions struct {
+	// Skip lists tunnels ("source/name") not to watch; auto-import leaves them out.
+	Skip            []string `json:"skip"`
+	NotificationIDs []int64  `json:"notificationIds"`
+	Interval        *int     `json:"interval"`
+	LatencyAlertMs  *int     `json:"latencyAlertMs"`
+	LatencyAlertFor *int     `json:"latencyAlertFor"`
+}
+
+// ImportResult says what an import created.
+type ImportResult struct {
+	Tunnels         int     `json:"imported"`
+	MonitorIDs      []int64 `json:"monitorIds"`
+	GroupID         int64   `json:"groupId,omitempty"`
+	ServerMonitorID int64   `json:"serverMonitorId,omitempty"`
+}
+
+type importSettings struct {
+	NotificationIDs []int64
+	Interval        int
+	LatencyAlertMs  int
+	LatencyAlertFor int
+}
+
+func (mg *Manager) importOptions(ctx context.Context, o *ImportOptions, interval int) importSettings {
+	s := importSettings{Interval: interval}
+	if o != nil && o.NotificationIDs != nil {
+		s.NotificationIDs = o.NotificationIDs
+	} else {
+		s.NotificationIDs, _ = mg.db.DefaultNotificationIDs(ctx)
+	}
+	if o != nil && o.Interval != nil && *o.Interval >= 10 {
+		s.Interval = *o.Interval
+	}
+	if o != nil && o.LatencyAlertMs != nil {
+		s.LatencyAlertMs = max(0, *o.LatencyAlertMs)
+		if o.LatencyAlertFor != nil {
+			s.LatencyAlertFor = max(0, *o.LatencyAlertFor)
+		}
+	} else {
+		s.LatencyAlertMs, s.LatencyAlertFor = mg.TunnelLatencyDefault(ctx)
+	}
+	if s.LatencyAlertMs == 0 {
+		s.LatencyAlertFor = 0
+	}
+	return s
+}
+
+func skipKey(agentID int64) string { return fmt.Sprintf("agentSkip.%d", agentID) }
+
+func (mg *Manager) skippedTunnels(ctx context.Context, agentID int64) map[string]bool {
+	out := map[string]bool{}
+	var list []string
+	if raw := mg.db.GetSetting(ctx, skipKey(agentID), ""); raw != "" {
+		_ = json.Unmarshal([]byte(raw), &list)
+	}
+	for _, k := range list {
+		out[k] = true
+	}
+	return out
+}
+
+func (mg *Manager) saveSkipped(ctx context.Context, agentID int64, m map[string]bool) {
+	list := make([]string, 0, len(m))
+	for k := range m {
+		list = append(list, k)
+	}
+	slices.Sort(list)
+	b, _ := json.Marshal(list)
+	_ = mg.db.SetSettings(ctx, map[string]string{skipKey(agentID): string(b)})
+}
+
+// TunnelLatencyDefault is the slow alert new tunnels get (0 = none).
+func (mg *Manager) TunnelLatencyDefault(ctx context.Context) (ms, forSec int) {
+	ms, _ = strconv.Atoi(mg.db.GetSetting(ctx, "tunnelLatencyAlertMs", "0"))
+	forSec, _ = strconv.Atoi(mg.db.GetSetting(ctx, "tunnelLatencyAlertFor", "120"))
+	if ms <= 0 {
+		return 0, 0
+	}
+	return ms, max(0, forSec)
 }
 
 func (mg *Manager) ensureAgentGroup(ctx context.Context, a *store.Agent) (int64, error) {

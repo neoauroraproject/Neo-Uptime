@@ -1,13 +1,14 @@
 import { useEffect, useMemo, useRef, useState, type FormEvent, type ReactNode } from 'react'
-import { Link, useNavigate, useParams } from 'react-router-dom'
-import { ArrowLeft, ArrowRight, Bell, Check, ChevronDown, Plus, Save, Search, X } from 'lucide-react'
+import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom'
+import { ArrowLeft, ArrowRight, Bell, Check, ChevronDown, CircleCheck, Play, Plus, Save, Search, Server, X } from 'lucide-react'
 import { api } from '../lib/api'
 import { canEdit, useApp } from '../lib/store'
 import { clsx, duration, n } from '../lib/format'
 import { useT } from '../lib/i18n'
 import type { AgentSource, Monitor, MonitorConfig, MonitorTag, MonitorType, PanelSnapshot, Tunnel } from '../lib/types'
-import { Alert, Button, Empty, Field, Input, Select, Skeleton, Switch, TagChip, Textarea, toast } from '../components/ui'
-import { TypeIcon, typeGroups, typeInfo } from '../components/meta'
+import { Alert, Button, Checkbox, Empty, Field, Input, Select, Skeleton, Spinner, Switch, TagChip, Textarea, toast } from '../components/ui'
+import { SourceBadge, TypeIcon, typeGroups, typeInfo } from '../components/meta'
+import { InstallBox } from './Servers'
 import { CountryPicker } from '../components/flag'
 import { NotificationDialog } from '../components/NotificationDialog'
 
@@ -29,6 +30,12 @@ const popular: { type: MonitorType; label: string; help: string }[] = [
 ]
 
 const steps = ['Type', 'Details', 'Alerts', 'Finish'] as const
+
+type Found = { backpack?: AgentSource; kariz?: AgentSource }
+const tunnelKeys = (f: Found) => [
+  ...(f.backpack?.tunnels ?? []).map((tn) => `backpack/${tn.name}`),
+  ...(f.kariz?.tunnels ?? []).map((tn) => `kariz/${tn.name}`),
+]
 
 function blank(defaults: number[]): Draft {
   return {
@@ -79,7 +86,9 @@ export default function MonitorForm({ mode }: { mode: 'add' | 'edit' | 'clone' }
   const agents = useApp((s) => s.agents)
   const role = useApp((s) => s.role)
   const [d, setD] = useState<Draft | null>(mode === 'add' ? blank(notifications.filter((x) => x.isDefault).map((x) => x.id)) : null)
-  const [step, setStep] = useState(mode === 'add' ? 0 : 1)
+  const [params] = useSearchParams()
+  // ?step=alerts opens an existing monitor straight at its alert settings.
+  const [step, setStep] = useState(mode === 'add' ? 0 : params.get('step') === 'alerts' ? 2 : 1)
   const [nameTouched, setNameTouched] = useState(mode !== 'add')
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
@@ -92,6 +101,29 @@ export default function MonitorForm({ mode }: { mode: 'add' | 'edit' | 'clone' }
   const [allTypes, setAllTypes] = useState(false)
   const [typeQuery, setTypeQuery] = useState('')
   const body = useRef<HTMLDivElement>(null)
+  // A new server set up from the wizard: created on the last step, then
+  // monitored as soon as its agent reports.
+  const [newServer, setNewServer] = useState(false)
+  const [srv, setSrv] = useState({ name: '', country: '' })
+  const [created, setCreated] = useState<{ id: number; install: string } | null>(null)
+  const [found, setFound] = useState<Found | null>(null)
+  const [pick, setPick] = useState<Set<string>>(new Set())
+  const [laterToo, setLaterToo] = useState(true)
+  const createdId = created?.id
+  useEffect(() => {
+    if (!createdId || found) return
+    const check = () => api.get<{ agent: { lastSeen: number }; backpack?: AgentSource | null; kariz?: AgentSource | null }>(`/api/agents/${createdId}`)
+      .then((r) => {
+        if (!r.agent.lastSeen) return
+        const f = { backpack: r.backpack ?? undefined, kariz: r.kariz ?? undefined }
+        setFound(f)
+        setPick(new Set(tunnelKeys(f)))
+      })
+      .catch(() => {})
+    check()
+    const h = setInterval(check, 3000)
+    return () => clearInterval(h)
+  }, [createdId, found])
 
   useEffect(() => {
     if (mode === 'add' || !id) return
@@ -146,6 +178,7 @@ export default function MonitorForm({ mode }: { mode: 'add' | 'edit' | 'clone' }
   const agentTunnels: Tunnel[] = (c.source === 'kariz' ? agentData?.kariz?.tunnels : agentData?.backpack?.tunnels) ?? []
   const last = steps.length - 1
   const hasLatency = d.type !== 'group' && d.type !== 'push'
+  const serverFlow = mode === 'add' && (d.type === 'agent' || d.type === 'agent-tunnel') && (newServer || agents.length === 0)
 
   const chooseType = (type: MonitorType) => {
     const next: MonitorConfig = { ...c }
@@ -228,11 +261,50 @@ export default function MonitorForm({ mode }: { mode: 'add' | 'edit' | 'clone' }
     }
   }
 
+  const createServer = async () => {
+    setError('')
+    setBusy(true)
+    try {
+      const r = await api.post<{ agent: { id: number }; install: string }>('/api/agents', { name: srv.name.trim(), country: srv.country, interval: 20, autoImport: false })
+      setCreated({ id: r.agent.id, install: r.install })
+      useApp.getState().loadAgents().catch(() => {})
+    } catch (err) {
+      setError((err as Error).message)
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  const startMonitoring = async () => {
+    if (!created) return
+    setError('')
+    setBusy(true)
+    try {
+      const r = await api.post<{ imported: number; monitorIds: number[]; groupId?: number; serverMonitorId?: number }>(`/api/agents/${created.id}/import`, {
+        keys: [...pick], skip: tunnelKeys(found ?? {}).filter((k) => !pick.has(k)), notificationIds: d.notificationIds, interval: d.interval,
+        latencyAlertMs: c.latencyAlertMs ?? 0, latencyAlertFor: c.latencyAlertFor ?? 0,
+      })
+      if (laterToo) await api.put(`/api/agents/${created.id}`, { name: srv.name.trim(), country: srv.country, interval: 20, autoImport: true })
+      await Promise.all([useApp.getState().loadDashboard(), useApp.getState().loadAgents()])
+      toast.success(t('Monitoring started'), t('{name} and {n} tunnels are being watched.', { name: srv.name.trim(), n: r.imported }))
+      const tunnelIds = r.monitorIds.filter((x) => x !== r.serverMonitorId)
+      const target = d.type === 'agent' ? r.serverMonitorId : tunnelIds.length === 1 ? tunnelIds[0] : r.groupId ?? r.serverMonitorId
+      nav(target ? `/dashboard/${target}` : '/servers')
+    } catch (err) {
+      setError((err as Error).message)
+    } finally {
+      setBusy(false)
+    }
+  }
+
   const submit = (e: FormEvent) => {
     e.preventDefault()
     if (!stepValid()) return
     if (step < last && mode === 'add') setStep(step + 1)
-    else save()
+    else if (serverFlow) {
+      if (!created) createServer()
+      else if (found) startMonitoring()
+    } else save()
   }
   const goTo = (i: number) => {
     if (i === step) return
@@ -497,19 +569,37 @@ export default function MonitorForm({ mode }: { mode: 'add' | 'edit' | 'clone' }
       )}
 
       {d.type.startsWith('agent') && (
-        agents.length === 0 ? (
-          <Alert tone="info" title={t('No server added yet')}>
-            {t('Add the server under Servers and run the one-line agent install on it.')} <Link className="text-accent-ink underline" to="/servers">{t('Add a server')}</Link>
-          </Alert>
+        serverFlow ? (
+          <div className="rounded-2xl border border-line bg-surface-2/40 p-4 space-y-4">
+            <div className="flex items-start justify-between gap-3">
+              <div className="flex items-start gap-3">
+                <span className="grid place-items-center size-9 shrink-0 rounded-xl bg-accent-soft text-accent-ink"><Server className="size-4" /></span>
+                <div>
+                  <p className="font-semibold">{t('New server')}</p>
+                  <p className="text-[13px] text-muted">{t('Give it a name here. On the last step you run one command on it, and monitoring starts as soon as it reports.')}</p>
+                </div>
+              </div>
+              {agents.length > 0 && <Button type="button" size="sm" variant="ghost" onClick={() => setNewServer(false)}>{t('Pick an existing server')}</Button>}
+            </div>
+            <div className="grid sm:grid-cols-[1fr_220px] gap-4">
+              <Field label={t('Server name')} required htmlFor="srvn">
+                <Input id="srvn" dir="auto" required maxLength={80} value={srv.name} onChange={(e) => setSrv({ ...srv, name: e.target.value })} placeholder={t('e.g. Frankfurt edge')} />
+              </Field>
+              <Field label={t('Flag')} htmlFor="srvf"><CountryPicker id="srvf" value={srv.country} onChange={(v) => setSrv({ ...srv, country: v })} /></Field>
+            </div>
+            {d.type === 'agent-tunnel' && <p className="text-[12.5px] text-muted">{t('You pick its tunnels once the agent has reported them.')}</p>}
+          </div>
         ) : (
           <div className={clsx('grid gap-4', d.type === 'agent-tunnel' ? 'sm:grid-cols-3' : 'sm:grid-cols-2')}>
             <Field label={t('Server')} required htmlFor="ag">
               <Select id="ag" required value={c.agentId ?? ''} onChange={(e) => {
+                if (e.target.value === 'new') return setNewServer(true)
                 const a = agents.find((x) => x.id === Number(e.target.value))
                 setD({ ...d, config: { ...c, agentId: Number(e.target.value), tunnelName: '' }, name: nameTouched || d.type !== 'agent' ? d.name : a?.name ?? d.name, country: d.country || a?.country || '' })
               }}>
                 <option value="" disabled>{t('Choose…')}</option>
                 {agents.map((a) => <option key={a.id} value={a.id}>{a.name}{a.online ? '' : ` (${t('offline')})`}</option>)}
+                {mode === 'add' && <option value="new">{t('+ New server…')}</option>}
               </Select>
             </Field>
             {d.type === 'agent-tunnel' && (
@@ -542,14 +632,14 @@ export default function MonitorForm({ mode }: { mode: 'add' | 'edit' | 'clone' }
         </Alert>
       )}
 
-      <div className="grid sm:grid-cols-[1fr_220px] gap-4">
+      {!serverFlow && <div className="grid sm:grid-cols-[1fr_220px] gap-4">
         <Field label={t('Friendly name')} required htmlFor="name">
           <Input id="name" dir="auto" value={d.name} onChange={(e) => { setNameTouched(true); set('name', e.target.value) }} placeholder={t('My website')} required maxLength={150} />
         </Field>
         <Field label={t('Flag')} htmlFor="flag" help={t('Shown on dashboards and status pages.')}>
           <CountryPicker id="flag" value={d.country} onChange={(v) => set('country', v)} />
         </Field>
-      </div>
+      </div>}
     </div>
   )
 
@@ -766,7 +856,56 @@ export default function MonitorForm({ mode }: { mode: 'add' | 'edit' | 'clone' }
     </div>
   )
 
-  const content = [typeStep, detailsStep, alertsStep, finishStep][step]
+  const counts = { bp: found?.backpack?.tunnels.length ?? 0, kz: found?.kariz?.tunnels.length ?? 0 }
+  const serverStep = (
+    <div className="space-y-5">
+      <div>
+        <h2 className="font-display text-xl font-semibold">{t('Connect the server')}</h2>
+        <p className="text-sm text-muted mt-1">{t('Run one command on the server, as root. This page waits for its first report, then starts the monitoring.')}</p>
+      </div>
+      {!created ? (
+        <div className="rounded-2xl border border-line p-4 flex items-center gap-3">
+          <span className="grid place-items-center size-10 shrink-0 rounded-xl bg-accent-soft text-accent-ink"><Server className="size-5" /></span>
+          <div className="min-w-0">
+            <p className="font-semibold truncate" dir="auto">{srv.name}</p>
+            <p className="text-[13px] text-muted">{t('Click “Create server” to get its install command.')}</p>
+          </div>
+        </div>
+      ) : (
+        <>
+          <InstallBox command={created.install} />
+          {!found ? (
+            <div className="flex items-center gap-3 rounded-2xl border border-dashed border-line-strong p-4">
+              <Spinner className="size-5" />
+              <div>
+                <p className="font-medium">{t('Waiting for the first report…')}</p>
+                <p className="text-[13px] text-muted">{t('Run the install command on the server; it appears here within seconds.')}</p>
+              </div>
+            </div>
+          ) : (
+            <div className="space-y-3">
+              <p className="flex items-center gap-2 font-medium text-up"><CircleCheck className="size-5" />{t('Connected — {bp} BackPack and {kz} Kariz tunnels found.', counts)}</p>
+              {tunnelKeys(found).length > 0 && (
+                <div className="rounded-2xl border border-line divide-y divide-line max-h-60 overflow-y-auto">
+                  {(['backpack', 'kariz'] as const).flatMap((src) => (found[src]?.tunnels ?? []).map((tn) => {
+                    const k = `${src}/${tn.name}`
+                    return (
+                      <Checkbox key={k} className="px-4 py-2.5" checked={pick.has(k)}
+                        onChange={(v) => { const s = new Set(pick); if (v) s.add(k); else s.delete(k); setPick(s) }}
+                        label={<span className="inline-flex flex-wrap items-center gap-2"><SourceBadge source={src} /><span className="font-medium" dir="auto">{tn.name}</span><span className="text-[12px] text-muted" dir="ltr">{(tn.carrier || tn.transport || '').toUpperCase()} · {tn.state}</span></span>} />
+                    )
+                  }))}
+                </div>
+              )}
+              <Checkbox checked={laterToo} onChange={setLaterToo} label={t('Also add tunnels created later')} />
+            </div>
+          )}
+        </>
+      )}
+    </div>
+  )
+
+  const content = [typeStep, detailsStep, alertsStep, serverFlow ? serverStep : finishStep][step]
   const back = mode === 'add' ? '/dashboard' : `/dashboard/${id}`
 
   return (
@@ -806,7 +945,11 @@ export default function MonitorForm({ mode }: { mode: 'add' | 'edit' | 'clone' }
             {step < last ? (
               step > 0 || mode !== 'add' ? <Button type="submit" variant="primary" icon={<ArrowRight className="size-4 rtl:rotate-180" />}>{t('Next')}</Button> : null
             ) : (
-              <Button type="submit" variant="primary" loading={busy} icon={<Save className="size-4" />}>{mode === 'edit' ? t('Save changes') : t('Create monitor')}</Button>
+              serverFlow ? (
+                !created ? <Button type="submit" variant="primary" loading={busy} icon={<Server className="size-4" />}>{t('Create server')}</Button>
+                  : !found ? <Button type="button" variant="primary" disabled icon={<Spinner className="size-4" />}>{t('Waiting for the server…')}</Button>
+                    : <Button type="submit" variant="primary" loading={busy} icon={<Play className="size-4" />}>{t('Start monitoring')}</Button>
+              ) : <Button type="submit" variant="primary" loading={busy} icon={<Save className="size-4" />}>{mode === 'edit' ? t('Save changes') : t('Create monitor')}</Button>
             )}
           </div>
         </div>

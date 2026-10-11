@@ -243,15 +243,16 @@ func (s *Server) handleImportAgentTunnels(w http.ResponseWriter, r *http.Request
 	}
 	var in struct {
 		Keys []string `json:"keys"`
+		monitor.ImportOptions
 	}
 	if err := readJSON(r, &in); err != nil {
 		writeErr(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	n, err := s.mgr.ImportAgentTunnels(r.Context(), id, in.Keys)
+	res, err := s.mgr.ImportAgentTunnels(r.Context(), id, in.Keys, &in.ImportOptions)
 	if err != nil {
 		writeErr(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	writeJSON(w, map[string]any{"imported": n})
+	writeJSON(w, res)
 }

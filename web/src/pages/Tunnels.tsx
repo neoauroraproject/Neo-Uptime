@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
-import { Cable, CircleCheck, Download, Ellipsis, KeyRound, Pencil, Plug, Plus, RefreshCw, Search, Server, Trash2, TriangleAlert } from 'lucide-react'
+import { Cable, CircleCheck, Download, Ellipsis, KeyRound, Pencil, Plug, Plus, RefreshCw, Search, Server, Trash2, TriangleAlert, Turtle } from 'lucide-react'
 import { api } from '../lib/api'
 import { canEdit, useApp } from '../lib/store'
 import { bytes, clsx, ms, n, timeAgo } from '../lib/format'
@@ -8,6 +8,7 @@ import { useT } from '../lib/i18n'
 import type { BackpackPanel, PanelSnapshot } from '../lib/types'
 import { Alert, Badge, Button, Card, Checkbox, Empty, Field, IconButton, Input, Menu, Modal, Segmented, Select, Skeleton, Switch, confirm, toast, useNow } from '../components/ui'
 import { TunnelBadges, TunnelCard } from '../components/tunnel'
+import { TunnelSlowAlertsDialog } from '../components/SlowAlert'
 
 /* ---------- panel dialog ---------- */
 
@@ -277,6 +278,8 @@ export default function Tunnels({ tab = 'tunnels' }: { tab?: 'tunnels' | 'panels
   const [source, setSource] = useState<'all' | 'backpack' | 'kariz'>('all')
   const [state, setState] = useState<'all' | 'online' | 'offline'>('all')
   const [sort, setSort] = useState<'status' | 'name' | 'latency' | 'traffic'>('status')
+  const [slowOpen, setSlowOpen] = useState(false)
+  const role = useApp((s) => s.role)
 
   const tunnels = useMemo(() => Object.values(monitors).filter((m) => m.type === 'backpack-tunnel' || m.type === 'agent-tunnel'), [monitors])
   const viaOf = (m: (typeof tunnels)[number]) => (m.type === 'backpack-tunnel' ? `p${m.config.panelId}` : `a${m.config.agentId}`)
@@ -315,8 +318,16 @@ export default function Tunnels({ tab = 'tunnels' }: { tab?: 'tunnels' | 'panels
           <h1 className="font-display text-[28px] font-semibold tracking-tight">{t('Tunnels')}</h1>
           <p className="text-sm text-muted mt-1">{t('BackPack and Kariz tunnels from your panels and servers, checked continuously.')}</p>
         </div>
-        <Segmented ariaLabel={t('Section')} value={tab} onChange={(v) => nav(v === 'panels' ? '/tunnels/panels' : '/tunnels')} options={[{ value: 'tunnels', label: t('Tunnels') }, { value: 'panels', label: `${t('BackPack panels')} (${n(panels.length)})` }]} />
+        <div className="flex flex-wrap items-center gap-2">
+          {tab === 'tunnels' && canEdit(role) && tunnels.length > 0 && (
+            <Button icon={<Turtle className="size-4" />} onClick={() => setSlowOpen(true)}>
+              {t('Slow alerts')} <span className="text-muted tnum">{n(tunnels.filter((m) => (m.config.latencyAlertMs ?? 0) > 0).length)}/{n(tunnels.length)}</span>
+            </Button>
+          )}
+          <Segmented ariaLabel={t('Section')} value={tab} onChange={(v) => nav(v === 'panels' ? '/tunnels/panels' : '/tunnels')} options={[{ value: 'tunnels', label: t('Tunnels') }, { value: 'panels', label: `${t('BackPack panels')} (${n(panels.length)})` }]} />
+        </div>
       </div>
+      <TunnelSlowAlertsDialog open={slowOpen} onClose={() => setSlowOpen(false)} ids={list.map((m) => m.id)} />
 
       {tab === 'panels' ? <Panels /> : (
         <>

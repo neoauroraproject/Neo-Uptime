@@ -243,6 +243,15 @@ func (s *Server) httpsRedirect(w http.ResponseWriter, r *http.Request) bool {
 	return true
 }
 
+// PlainHandler is the panel for when it listens on the HTTP port itself, so
+// that automatic HTTPS can answer its challenges there.
+func (s *Server) PlainHandler() http.Handler {
+	if s.certs == nil {
+		return s
+	}
+	return s.certs.PlainHandler(s)
+}
+
 // applyHTTPS reloads the domain table and lets the HTTPS listeners follow.
 func (s *Server) applyHTTPS(ctx context.Context) {
 	s.reloadHosts(ctx)

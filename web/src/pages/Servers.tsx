@@ -21,7 +21,7 @@ function Bar({ value, label }: { value: number; label: string }) {
   )
 }
 
-function InstallBox({ command }: { command: string }) {
+export function InstallBox({ command }: { command: string }) {
   const t = useT()
   return (
     <div className="space-y-2">

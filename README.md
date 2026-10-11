@@ -104,6 +104,8 @@ Neo Uptime does not have to run next to your tunnels. Install the small agent on
 
 3. Within seconds the server shows up as online. Its BackPack and Kariz tunnels are added as monitors in a group named after the server.
 
+You can also do all of it from **Add monitor**: choose *Tunnel* or *Server*, pick **+ New server…**, give it a name, set the alerts, and the last step shows the command, waits for the server's first report, lets you tick the tunnels to watch and starts monitoring. Tunnels you leave unticked stay out; tunnels created later are added on their own.
+
 The agent only sends: it opens no port and nothing connects to it. Every 20 seconds it reports:
 
 - **The server:** CPU, load, memory, swap, disk, network rate and TCP connections.
@@ -139,7 +141,10 @@ Each tunnel monitor records its online state, real latency, traffic in and out, 
 
 Turn on **On by default** and every new monitor, server and imported tunnel uses the channel. When `api.telegram.org` is filtered, set **API server** to a relay (for example a Cloudflare Worker) or set a **Proxy** (`socks5://…`).
 
-**Slow tunnels:** in a monitor's **Alerts** step, turn on **Alert when it gets slow** and set the limit, for example *slower than 300 ms for at least 2 minutes*. You get one alert when it starts and one when it is fast again.
+**Slow tunnels:** get told when a tunnel stays slow, for example *slower than 300 ms for at least 2 minutes*, and again when it is fast. Set it:
+
+- for **all tunnels at once** with the **Slow alerts** button on the **Tunnels** page — tick *Also for tunnels added later* to make it the default;
+- for **one monitor** in the **Alerts** box at the top of its page (**Set up**), or in the **Alerts** step when you add it.
 
 ## Push monitors (Uptime Kuma compatible)
 
@@ -178,6 +183,8 @@ The page then opens at `https://status.example.com` — no port. Opening the dom
 To drop the port from the admin panel too, set a **Panel domain** under **Settings → Domains & HTTPS** (for example `uptime.example.com`), then click **Use https://uptime.example.com** to make it the public address used in alert links, push URLs and agent commands.
 
 <img src="docs/screenshots/editor-domain.jpg" alt="Status page editor: logo upload, own domain and HTTPS status" />
+
+If the panel itself listens on port 443 (or 80), automatic HTTPS shares that port with it: browsers that speak HTTPS get the certificate, plain HTTP still reaches the panel.
 
 If another web server already uses ports 80 and 443 (nginx, Caddy, a panel), leave automatic HTTPS off and point that server at Neo Uptime instead (see [Configuration](#configuration)); the domain still shows only its page. The ports can be changed with `NEO_UPTIME_HTTP_PORT` and `NEO_UPTIME_HTTPS_PORT`, for example when a router forwards 443 to another port.
 
@@ -322,6 +329,8 @@ bash <(curl -fsSL https://raw.githubusercontent.com/neoauroraproject/Neo-Uptime/
 
 ۳. ظرف چند ثانیه سرور آنلاین می‌شود و تانل‌های BackPack و Kariz آن خودکار به مانیتور تبدیل می‌شوند.
 
+همه‌ی این کار را از **افزودن مانیتور** هم می‌شود انجام داد: «تانل» یا «سرور» را انتخاب کنید، **+ سرور جدید…** را بزنید و اسم بگذارید. در مرحله‌ی آخر دستور نصب نشان داده می‌شود، صفحه منتظر اولین گزارش سرور می‌ماند، تانل‌ها را تیک می‌زنید و مانیتورینگ شروع می‌شود. تانل‌هایی که تیک نزنید اضافه نمی‌شوند و تانل‌های جدید بعدی خودکار اضافه می‌شوند.
+
 ایجنت فقط داده ارسال می‌کند و هیچ پورتی باز نمی‌کند. هر ۲۰ ثانیه این‌ها را با توکن به Neo Uptime می‌فرستد: پردازنده، رم، دیسک و ترافیک سرور، تانل‌های BackPack (از فایل‌های `/etc/backpack`، بدون نیاز به توکن پنل)، تانل‌های Kariz (از سوکت کنترلی در `/etc/kariz`) و پینگ هر تانل.
 
 ### اتصال مستقیم به پنل BackPack
@@ -344,7 +353,10 @@ bash <(curl -fsSL https://raw.githubusercontent.com/neoauroraproject/Neo-Uptime/
 
 اگر api.telegram.org فیلتر است، در فیلد **سرور API** آدرس یک رله (مثلاً Cloudflare Worker) یا در فیلد **پراکسی** یک `socks5://` وارد کنید.
 
-**هشدار کندی تانل:** در مرحله‌ی **هشدارها** هنگام افزودن مانیتور، **هشدار هنگام کند شدن** را روشن کنید، مثلاً «کندتر از ۳۰۰ میلی‌ثانیه به مدت دست‌کم ۲ دقیقه». یک پیام هنگام شروع کندی و یکی هنگام برگشت به حالت عادی می‌گیرید.
+**هشدار کندی تانل:** مثلاً «کندتر از ۳۰۰ میلی‌ثانیه به مدت دست‌کم ۲ دقیقه». یک پیام هنگام شروع کندی و یکی هنگام برگشت به حالت عادی می‌گیرید. جای تنظیمش:
+
+- برای **همه‌ی تانل‌ها با هم**: دکمه‌ی **هشدار کندی** در صفحه‌ی **تانل‌ها** (با تیک «برای تانل‌هایی که بعداً اضافه می‌شوند هم»)؛
+- برای **یک مانیتور**: کادر **هشدار** بالای صفحه‌ی همان مانیتور (دکمه‌ی **تنظیم**)، یا مرحله‌ی **هشدارها** هنگام افزودن.
 
 ### دامنه‌ی اختصاصی و SSL خودکار برای صفحه‌ی وضعیت
 
@@ -355,6 +367,8 @@ bash <(curl -fsSL https://raw.githubusercontent.com/neoauroraproject/Neo-Uptime/
 ۳. همانجا روی **دریافت فوری SSL** بزنید. اگر HTTPS خاموش باشد روشنش می‌کند، Neo Uptime روی پورت‌های ۸۰ و ۴۴۳ هم گوش می‌دهد، گواهی رایگان Let’s Encrypt می‌گیرد و خودش تمدیدش می‌کند.
 
 صفحه از آن به بعد روی `https://status.example.com` و **بدون پورت** باز می‌شود؛ اگر کسی دامنه را با HTTP یا با پورت پنل (`:7788`) باز کند، به همین آدرس منتقل می‌شود. روی دامنه‌ی صفحه‌ی وضعیت فقط همان صفحه دیده می‌شود؛ پنل مدیریت و صفحه‌ی ورود از آن دامنه در دسترس نیستند.
+
+اگر پورت خود پنل را ۴۴۳ (یا ۸۰) گذاشته‌اید مشکلی نیست: SSL خودکار همان پورت را با پنل شریک می‌شود و دیگر خطای «پورت ۴۴۳ اشغال است» نمی‌دهد.
 
 برای اینکه خود پنل مدیریت هم بدون پورت باز شود، در **تنظیمات ← دامنه‌ها و HTTPS** یک **دامنه‌ی پنل** (مثلاً `uptime.example.com`) بگذارید و بعد روی دکمه‌ی «استفاده از https://uptime.example.com» بزنید تا آدرس عمومی پنل شود.
 

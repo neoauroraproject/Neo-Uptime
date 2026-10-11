@@ -402,8 +402,10 @@ func (s *Server) handleCheckNow(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handleBulkMonitors(w http.ResponseWriter, r *http.Request) {
 	var in struct {
-		Action string  `json:"action"`
-		IDs    []int64 `json:"ids"`
+		Action          string  `json:"action"`
+		IDs             []int64 `json:"ids"`
+		LatencyAlertMs  int     `json:"latencyAlertMs"`
+		LatencyAlertFor int     `json:"latencyAlertFor"`
 	}
 	if err := readJSON(r, &in); err != nil {
 		writeErr(w, http.StatusBadRequest, err.Error())
@@ -426,8 +428,26 @@ func (s *Server) handleBulkMonitors(w http.ResponseWriter, r *http.Request) {
 			if err := s.db.DeleteMonitor(ctx, id); err == nil {
 				s.mgr.Remove(id)
 			}
+		case "latency":
+			// Set (or, with 0, clear) the slow alert on many monitors at once.
+			if in.LatencyAlertMs < 0 || in.LatencyAlertMs > 600000 {
+				writeErr(w, http.StatusBadRequest, "latency alert: use 1 to 600000 ms, or 0 to turn it off")
+				return
+			}
+			m, err := s.db.GetMonitor(ctx, id)
+			if err != nil || m.Type == monitor.TypeGroup || m.Type == monitor.TypePush {
+				continue
+			}
+			m.Config.LatencyAlertMs = in.LatencyAlertMs
+			m.Config.LatencyAlertFor = max(0, min(86400, in.LatencyAlertFor))
+			if in.LatencyAlertMs == 0 {
+				m.Config.LatencyAlertFor = 0
+			}
+			if err := s.db.UpdateMonitor(ctx, m); err == nil {
+				s.mgr.Upsert(m)
+			}
 		default:
-			writeErr(w, http.StatusBadRequest, "action must be pause, resume or delete")
+			writeErr(w, http.StatusBadRequest, "action must be pause, resume, delete or latency")
 			return
 		}
 	}

@@ -949,13 +949,14 @@ func (mg *Manager) ImportTunnels(ctx context.Context, p *store.BackpackPanel, na
 		return 0, err
 	}
 	notifs, _ := mg.db.DefaultNotificationIDs(ctx)
+	slowMs, slowFor := mg.TunnelLatencyDefault(ctx)
 	n := 0
 	for _, t := range todo {
 		desc := strings.TrimSpace(strings.Join([]string{strings.ToUpper(t.Direction), strings.ToUpper(t.Carrier), t.Preset}, " "))
 		m := &store.Monitor{
 			Name: t.Name, Type: TypeBackpackTun, ParentID: &gid, Active: true, Country: strings.ToLower(t.PeerCountry),
 			Interval: max(p.Interval, 20), RetryInterval: max(p.Interval, 20), MaxRetries: 1, Timeout: 25,
-			Config:          store.MonitorConfig{PanelID: p.ID, TunnelName: t.Name},
+			Config:          store.MonitorConfig{PanelID: p.ID, TunnelName: t.Name, LatencyAlertMs: slowMs, LatencyAlertFor: slowFor},
 			NotificationIDs: nonNil(notifs), Description: desc,
 		}
 		if err := mg.db.CreateMonitor(ctx, m); err != nil {

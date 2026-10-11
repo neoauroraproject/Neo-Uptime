@@ -252,8 +252,8 @@ function Zen({ d, now, left }: { d: PubData; now: number; left: number }) {
       ))}
 
       {(page.footer || page.showPoweredBy || !page.showBanner) && (
-        <footer className="pt-2 flex flex-col sm:flex-row items-center justify-between gap-3 text-[12px] text-subtle">
-          <div className="whitespace-pre-line text-center sm:ltr:text-left sm:rtl:text-right" dir="auto">{page.footer && <Linkify text={page.footer} />}{!page.showBanner && !page.footer && t('Updated {ago}', { ago: timeAgo(d.updatedAt, now) })}</div>
+        <footer className="pt-2 flex flex-col items-center gap-2 text-center text-[12px] text-subtle">
+          <div className="whitespace-pre-line text-center" dir="auto">{page.footer && <Linkify text={page.footer} />}{!page.showBanner && !page.footer && t('Updated {ago}', { ago: timeAgo(d.updatedAt, now) })}</div>
           {page.showPoweredBy && <PoweredBy />}
         </footer>
       )}
@@ -444,8 +444,8 @@ function Classic({ d, theme, layout, now, left }: { d: PubData; theme: Theme; la
         </section>
       ))}
 
-      <footer className="pt-6 pb-2 flex flex-col sm:flex-row items-center justify-between gap-3 text-[12.5px] text-subtle">
-        <div className="whitespace-pre-line text-center sm:ltr:text-left sm:rtl:text-right" dir="auto">{page.footer && <Linkify text={page.footer} />}</div>
+      <footer className="pt-6 pb-2 flex flex-col items-center gap-2 text-center text-[12.5px] text-subtle">
+        <div className="whitespace-pre-line text-center" dir="auto">{page.footer && <Linkify text={page.footer} />}</div>
         {page.showPoweredBy && <PoweredBy />}
       </footer>
     </div>

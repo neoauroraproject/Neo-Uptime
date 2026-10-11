@@ -563,6 +563,9 @@ var settingDefaults = map[string]string{
 	"httpsEnabled":        "false",
 	"acmeEmail":           "",
 	"panelDomain":         "",
+	// The slow alert tunnels get when they are imported (0 = none).
+	"tunnelLatencyAlertMs":  "0",
+	"tunnelLatencyAlertFor": "120",
 }
 
 func (s *Server) settings(ctx context.Context) map[string]string {
@@ -603,6 +606,12 @@ func (s *Server) handlePutSettings(w http.ResponseWriter, r *http.Request) {
 		}
 		v = strings.TrimSpace(v)
 		switch k {
+		case "tunnelLatencyAlertMs", "tunnelLatencyAlertFor":
+			n, err := strconv.Atoi(v)
+			if err != nil || n < 0 || n > 600000 {
+				writeErr(w, http.StatusBadRequest, "use a whole number of milliseconds or seconds")
+				return
+			}
 		case "keepDataDays":
 			n, err := strconv.Atoi(v)
 			if err != nil || n < 1 || n > 3650 {
