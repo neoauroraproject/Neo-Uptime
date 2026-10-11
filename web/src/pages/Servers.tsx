@@ -1,12 +1,12 @@
 import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { ArrowDown, ArrowUp, CircleCheck, Cpu, Download, Ellipsis, HardDrive, KeyRound, LoaderCircle, MemoryStick, Pencil, Plus, Server, Terminal, Trash2 } from 'lucide-react'
+import { ArrowDown, ArrowUp, CircleCheck, Cpu, Download, Ellipsis, HardDrive, KeyRound, LoaderCircle, MemoryStick, Pencil, Plus, RefreshCw, Route as RouteIcon, Server, Terminal, Trash2 } from 'lucide-react'
 import { api } from '../lib/api'
 import { canEdit, useApp } from '../lib/store'
 import { bytes, clsx, duration, n, pct, rate, timeAgo } from '../lib/format'
 import { useT } from '../lib/i18n'
-import type { Agent, AgentSource } from '../lib/types'
-import { Alert, Button, Card, Checkbox, CopyButton, Empty, Field, IconButton, Input, Menu, Modal, Select, Skeleton, Switch, confirm, toast, useNow } from '../components/ui'
+import type { Agent, AgentAddresses, AgentSource } from '../lib/types'
+import { Alert, Button, Card, Checkbox, CopyButton, Empty, Field, IconButton, Input, Menu, Modal, Select, Skeleton, Switch, confirm, toast, useNow, Segmented } from '../components/ui'
 import { CountryPicker, Flag, countryName } from '../components/flag'
 import { SourceBadge } from '../components/meta'
 import { TunnelBadges } from '../components/tunnel'
@@ -21,14 +21,55 @@ function Bar({ value, label }: { value: number; label: string }) {
   )
 }
 
-export function InstallBox({ command }: { command: string }) {
+type Route = 'ip' | 'domain' | 'tunnel'
+
+/**
+ * The agent's install command, with a choice of how it reaches this panel:
+ * straight to the server's IP, through the domain, or inside a tunnel whose
+ * local port on that server leads here. The others stay as fallbacks.
+ */
+export function InstallBox({ command, addresses, keepToken }: { command: string; addresses?: AgentAddresses; keepToken?: boolean }) {
   const t = useT()
+  const [route, setRoute] = useState<Route>('ip')
+  const [tport, setTport] = useState(addresses?.port || 7788)
+  const direct = addresses?.direct ?? ''
+  const pub = addresses?.public ?? ''
+  const order = route === 'tunnel' ? [`http://127.0.0.1:${tport}`, direct, pub] : route === 'domain' ? [pub, direct] : [direct, pub]
+  const servers = [...new Set(order.filter(Boolean))].join(',')
+  let cmd = addresses && servers ? command.replace(/--server \S+/, `--server ${servers}`) : command
+  if (keepToken) cmd = cmd.replace(/ --token \S+/, '')
+  const options = [
+    { value: 'ip' as Route, label: t('Server IP') },
+    ...(pub ? [{ value: 'domain' as Route, label: t('Domain') }] : []),
+    { value: 'tunnel' as Route, label: t('Through a tunnel') },
+  ]
   return (
-    <div className="space-y-2">
+    <div className="space-y-3">
+      {addresses && (
+        <div className="space-y-2">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <span className="text-[13px] font-medium">{t('Reports go to')}</span>
+            <Segmented size="sm" ariaLabel={t('Reports go to')} value={route} onChange={setRoute} options={options} />
+          </div>
+          <p className="text-[12.5px] text-muted leading-relaxed">
+            {route === 'ip' && (direct
+              ? t('Straight to this server’s IP ({addr}). The domain is only tried when the IP cannot be reached.', { addr: direct.replace(/^https?:\/\//, '') })
+              : t('This server’s public IP is not known here — open the panel by its IP once, or pick another way.'))}
+            {route === 'domain' && t('Through {addr}. Use it when the domain reaches this panel directly; behind a CDN such as Cloudflare it may not.', { addr: pub.replace(/^https?:\/\//, '') })}
+            {route === 'tunnel' && t('On that server, forward a port of its BackPack or Kariz tunnel to this panel’s port {port}. Reports then travel inside the tunnel, so filtering in between does not matter; the IP is tried when the tunnel is down.', { port: addresses.port })}
+          </p>
+          {route === 'tunnel' && (
+            <label className="flex items-center gap-3 text-[13px]">
+              <span className="text-muted whitespace-nowrap">{t('Port on that server')}</span>
+              <span className="w-28 shrink-0"><Input dir="ltr" type="number" min={1} max={65535} value={tport} onChange={(e) => setTport(Number(e.target.value) || 0)} className="h-9 font-mono" /></span>
+            </label>
+          )}
+        </div>
+      )}
       <div className="flex items-center gap-2 text-[13px] font-medium"><Terminal className="size-4 text-muted" />{t('Run this on the server, as root:')}</div>
       <div className="flex gap-2 items-start">
-        <pre className="flex-1 min-w-0 overflow-x-auto whitespace-pre-wrap break-all rounded-xl bg-[#0b0f0c] text-[#d9f99d] border border-line px-3 py-3 font-mono text-[12px] leading-relaxed" dir="ltr">{command}</pre>
-        <CopyButton text={command} />
+        <pre className="flex-1 min-w-0 overflow-x-auto whitespace-pre-wrap break-all rounded-xl bg-[#0b0f0c] text-[#d9f99d] border border-line px-3 py-3 font-mono text-[12px] leading-relaxed" dir="ltr">{cmd}</pre>
+        <CopyButton text={cmd} />
       </div>
     </div>
   )
@@ -38,7 +79,7 @@ function AddDialog({ open, onClose, edit }: { open: boolean; onClose: () => void
   const t = useT()
   const agents = useApp((s) => s.agents)
   const [f, setF] = useState({ name: '', country: '', interval: 20, autoImport: true })
-  const [created, setCreated] = useState<{ id: number; install: string } | null>(null)
+  const [created, setCreated] = useState<{ id: number; install: string; addresses?: AgentAddresses } | null>(null)
   const [busy, setBusy] = useState(false)
   const [err, setErr] = useState('')
 
@@ -67,8 +108,8 @@ function AddDialog({ open, onClose, edit }: { open: boolean; onClose: () => void
         await useApp.getState().loadAgents()
         onClose()
       } else {
-        const r = await api.post<{ agent: Agent; token: string; install: string }>('/api/agents', f)
-        setCreated({ id: r.agent.id, install: r.install })
+        const r = await api.post<{ agent: Agent; token: string; install: string; addresses: AgentAddresses }>('/api/agents', f)
+        setCreated({ id: r.agent.id, install: r.install, addresses: r.addresses })
         await useApp.getState().loadAgents()
       }
     } catch (e) {
@@ -84,7 +125,7 @@ function AddDialog({ open, onClose, edit }: { open: boolean; onClose: () => void
       footer={created ? <Button variant="primary" onClick={onClose}>{t('Done')}</Button> : <><Button variant="ghost" onClick={onClose}>{t('Cancel')}</Button><Button variant="primary" loading={busy} disabled={!f.name} onClick={save}>{edit ? t('Save') : t('Create & show install command')}</Button></>}>
       {created ? (
         <div className="space-y-5">
-          <InstallBox command={created.install} />
+          <InstallBox command={created.install} addresses={created.addresses} />
           <Alert tone="warning">{t('The command contains this server’s token. It is shown only now — regenerate it from the server’s menu if you lose it.')}</Alert>
           <div className={clsx('flex items-center gap-3 rounded-2xl border px-4 py-3', live?.online ? 'border-up/30 bg-up/8' : 'border-line bg-surface-2')}>
             {live?.online ? <CircleCheck className="size-5 text-up" /> : <LoaderCircle className="size-5 text-muted animate-spin" />}
@@ -199,7 +240,9 @@ function ServerCard({ a, onEdit, onTunnels }: { a: Agent; onEdit: () => void; on
   const t = useT()
   const role = useApp((s) => s.role)
   const now = useNow(10_000)
-  const [token, setToken] = useState<string | null>(null)
+  const [token, setToken] = useState<{ install: string; addresses?: AgentAddresses } | null>(null)
+  const [move, setMove] = useState<{ install: string; addresses?: AgentAddresses } | null>(null)
+  const [checking, setChecking] = useState(false)
   const s = a.info?.system
   const memPct = s?.memTotal ? (100 * s.memUsed) / s.memTotal : 0
   const diskPct = s?.diskTotal ? (100 * s.diskUsed) / s.diskTotal : 0
@@ -216,8 +259,23 @@ function ServerCard({ a, onEdit, onTunnels }: { a: Agent; onEdit: () => void; on
   }
   const regen = async () => {
     if (!(await confirm({ title: t('Make a new token?'), body: t('The current token stops working at once; run the new install command on the server.'), confirmLabel: t('New token'), danger: true }))) return
-    const r = await api.post<{ install: string }>(`/api/agents/${a.id}/token`)
-    setToken(r.install)
+    const r = await api.post<{ install: string; addresses: AgentAddresses }>(`/api/agents/${a.id}/token`)
+    setToken(r)
+  }
+  const changeAddress = async () => {
+    const r = await api.get<{ install: string; addresses: AgentAddresses }>(`/api/agents/${a.id}`)
+    setMove(r)
+  }
+  const checkAgain = async () => {
+    setChecking(true)
+    try {
+      await useApp.getState().loadAgents()
+      const cur = useApp.getState().agents.find((x) => x.id === a.id)
+      if (cur?.online) toast.success(t('{name} is reporting', { name: a.name }))
+      else toast.info(t('{name}: still no report', { name: a.name }), cur?.lastSeen ? t('The last one came {ago}.', { ago: timeAgo(cur.lastSeen * 1000) }) : undefined)
+    } finally {
+      setChecking(false)
+    }
   }
   return (
     <Card className={clsx('p-5 flex flex-col gap-4 relative overflow-hidden', !a.online && !never && 'border-down/40')}>
@@ -236,6 +294,7 @@ function ServerCard({ a, onEdit, onTunnels }: { a: Agent; onEdit: () => void; on
             { label: t('Tunnels on this server'), icon: <Download />, onClick: onTunnels },
             ...(role === 'admin' ? [
               { label: t('Edit'), icon: <Pencil />, onClick: onEdit },
+              { label: t('Change reporting address'), icon: <RouteIcon />, onClick: changeAddress },
               { label: t('New token & install command'), icon: <KeyRound />, onClick: regen },
               { divider: true, label: '' },
               { label: t('Remove'), icon: <Trash2 />, danger: true, onClick: del },
@@ -243,6 +302,16 @@ function ServerCard({ a, onEdit, onTunnels }: { a: Agent; onEdit: () => void; on
           ]} />
         )}
       </div>
+      {!a.online && !never && (
+        <div className="rounded-xl border border-down/25 bg-down/6 p-3 space-y-2.5 text-[13px]">
+          <p className="text-muted">{t('No report since {ago}. On that server, this shows why:', { ago: timeAgo(a.lastSeen * 1000, now) })}</p>
+          <div className="flex gap-2"><code className="flex-1 min-w-0 truncate rounded-lg bg-surface border border-line px-2.5 py-1.5 font-mono text-[12px]" dir="ltr">neo-uptime-agent test</code><CopyButton text="neo-uptime-agent test" /></div>
+          <div className="flex flex-wrap gap-2">
+            <Button size="sm" loading={checking} icon={<RefreshCw className="size-3.5" />} onClick={checkAgain}>{t('Check again')}</Button>
+            {role === 'admin' && <Button size="sm" variant="soft" icon={<RouteIcon className="size-3.5" />} onClick={changeAddress}>{t('Change reporting address')}</Button>}
+          </div>
+        </div>
+      )}
       {never ? (
         <p className="text-sm text-muted">{t('Run the install command on the server; it appears here within seconds.')}</p>
       ) : s && (s.memTotal > 0 || s.cpuCores > 0) ? (
@@ -272,7 +341,15 @@ function ServerCard({ a, onEdit, onTunnels }: { a: Agent; onEdit: () => void; on
         <span>{a.lastSeen ? t('last report {ago}', { ago: timeAgo(a.lastSeen * 1000, now) }) : ''}</span>
       </div>
       <Modal open={!!token} onClose={() => setToken(null)} title={t('New install command for {name}', { name: a.name })} footer={<Button variant="primary" onClick={() => setToken(null)}>{t('Done')}</Button>}>
-        {token && <InstallBox command={token} />}
+        {token && <InstallBox command={token.install} addresses={token.addresses} />}
+      </Modal>
+      <Modal open={!!move} onClose={() => setMove(null)} size="lg" title={t('Change reporting address of {name}', { name: a.name })} footer={<Button variant="primary" onClick={() => setMove(null)}>{t('Done')}</Button>}>
+        {move && (
+          <div className="space-y-3">
+            <p className="text-sm text-muted">{t('Run it on that server. The agent keeps its token, updates itself and reports to the new address.')}</p>
+            <InstallBox command={move.install} addresses={move.addresses} keepToken />
+          </div>
+        )}
       </Modal>
     </Card>
   )

@@ -48,7 +48,8 @@ Usage:
   neo-uptime-agent version
 
 Flags (or environment):
-  --server          NEO_AGENT_SERVER     Neo Uptime address, e.g. https://uptime.example.com
+  --server          NEO_AGENT_SERVER     Neo Uptime address, e.g. http://203.0.113.5:7788; several,
+                                         comma-separated, are tried in turn (e.g. a tunnel port first)
   --token           NEO_AGENT_TOKEN      the agent token from Neo Uptime → Servers
   --interval        NEO_AGENT_INTERVAL   seconds between reports (default 20)
   --insecure        NEO_AGENT_INSECURE   accept a self-signed Neo Uptime certificate
@@ -100,7 +101,7 @@ func main() {
 		_ = enc.Encode(a.Collect(ctx))
 	case "test":
 		need(cfg)
-		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
 		defer cancel()
 		r := a.Collect(ctx)
 		ack, err := a.Send(ctx, r)
@@ -114,7 +115,7 @@ func main() {
 		if r.Kariz != nil {
 			kz = len(r.Kariz.Tunnels)
 		}
-		fmt.Printf("accepted as %q — %d BackPack and %d Kariz tunnel(s) reported\n", ack.Name, bp, kz)
+		fmt.Printf("accepted as %q through %s — %d BackPack and %d Kariz tunnel(s) reported\n", ack.Name, a.Current(), bp, kz)
 	case "run":
 		need(cfg)
 		ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)

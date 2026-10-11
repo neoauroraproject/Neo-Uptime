@@ -392,6 +392,9 @@ export interface Agent {
   info?: AgentInfo
 }
 
+/** The ways an agent can reach this panel. */
+export interface AgentAddresses { direct: string; public: string; port: number; ip: string }
+
 export interface AgentSource { installed: boolean; mode?: string; version?: string; error?: string; tunnels: Tunnel[] }
 
 export interface StatusApiKey {

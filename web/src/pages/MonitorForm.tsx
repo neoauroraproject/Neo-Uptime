@@ -5,7 +5,7 @@ import { api } from '../lib/api'
 import { canEdit, useApp } from '../lib/store'
 import { clsx, duration, n } from '../lib/format'
 import { useT } from '../lib/i18n'
-import type { AgentSource, Monitor, MonitorConfig, MonitorTag, MonitorType, PanelSnapshot, Tunnel } from '../lib/types'
+import type { AgentAddresses, AgentSource, Monitor, MonitorConfig, MonitorTag, MonitorType, PanelSnapshot, Tunnel } from '../lib/types'
 import { Alert, Button, Checkbox, Empty, Field, Input, Select, Skeleton, Spinner, Switch, TagChip, Textarea, toast } from '../components/ui'
 import { SourceBadge, TypeIcon, typeGroups, typeInfo } from '../components/meta'
 import { InstallBox } from './Servers'
@@ -105,7 +105,7 @@ export default function MonitorForm({ mode }: { mode: 'add' | 'edit' | 'clone' }
   // monitored as soon as its agent reports.
   const [newServer, setNewServer] = useState(false)
   const [srv, setSrv] = useState({ name: '', country: '' })
-  const [created, setCreated] = useState<{ id: number; install: string } | null>(null)
+  const [created, setCreated] = useState<{ id: number; install: string; addresses?: AgentAddresses } | null>(null)
   const [found, setFound] = useState<Found | null>(null)
   const [pick, setPick] = useState<Set<string>>(new Set())
   const [laterToo, setLaterToo] = useState(true)
@@ -265,8 +265,8 @@ export default function MonitorForm({ mode }: { mode: 'add' | 'edit' | 'clone' }
     setError('')
     setBusy(true)
     try {
-      const r = await api.post<{ agent: { id: number }; install: string }>('/api/agents', { name: srv.name.trim(), country: srv.country, interval: 20, autoImport: false })
-      setCreated({ id: r.agent.id, install: r.install })
+      const r = await api.post<{ agent: { id: number }; install: string; addresses: AgentAddresses }>('/api/agents', { name: srv.name.trim(), country: srv.country, interval: 20, autoImport: false })
+      setCreated({ id: r.agent.id, install: r.install, addresses: r.addresses })
       useApp.getState().loadAgents().catch(() => {})
     } catch (err) {
       setError((err as Error).message)
@@ -873,7 +873,7 @@ export default function MonitorForm({ mode }: { mode: 'add' | 'edit' | 'clone' }
         </div>
       ) : (
         <>
-          <InstallBox command={created.install} />
+          <InstallBox command={created.install} addresses={created.addresses} />
           {!found ? (
             <div className="flex items-center gap-3 rounded-2xl border border-dashed border-line-strong p-4">
               <Spinner className="size-5" />

@@ -37,7 +37,11 @@ type Server struct {
 	dataDir string
 	hosts   hostTable
 	certs   *certs.Manager // nil until EnableHTTPS
+	port    int            // the panel's own port, for agent addresses
 }
+
+// SetPanelPort records the port the panel listens on.
+func (s *Server) SetPanelPort(p int) { s.port = p }
 
 // New builds the server. static is the built web app.
 func New(db *store.DB, mgr *monitor.Manager, bp *backpack.Cache, agents *monitor.AgentHub, hub *Hub, static fs.FS, dataDir string) *Server {

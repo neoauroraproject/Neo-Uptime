@@ -4,13 +4,16 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"regexp"
+	"strconv"
 	"strings"
 	"time"
 
 	"github.com/neoauroraproject/Neo-Uptime/internal/agentproto"
 	"github.com/neoauroraproject/Neo-Uptime/internal/auth"
+	"github.com/neoauroraproject/Neo-Uptime/internal/certs"
 	"github.com/neoauroraproject/Neo-Uptime/internal/monitor"
 	"github.com/neoauroraproject/Neo-Uptime/internal/store"
 	"github.com/neoauroraproject/Neo-Uptime/internal/version"
@@ -108,13 +111,25 @@ func (s *Server) handleGetAgent(w http.ResponseWriter, r *http.Request) {
 	}
 	out["imported"] = imported
 	out["install"] = s.installCommand(r, "")
+	out["addresses"] = s.addresses(r)
 	writeJSON(w, out)
 }
 
 // installCommand is the one-liner that installs the agent on a server.
-func (s *Server) installCommand(r *http.Request, token string) string {
-	base := strings.TrimRight(s.db.GetSetting(r.Context(), "primaryBaseURL", ""), "/")
-	if base == "" {
+// agentAddresses are the ways an agent can reach this panel: straight to the
+// server's IP and port, through the public address (a domain), or through a
+// tunnel that forwards the panel's port to 127.0.0.1 on the agent's server.
+type agentAddresses struct {
+	Direct string `json:"direct"` // http://IP:port
+	Public string `json:"public"` // the public address, if it differs
+	Port   int    `json:"port"`
+	IP     string `json:"ip"`
+}
+
+func (s *Server) addresses(r *http.Request) agentAddresses {
+	a := agentAddresses{Port: s.port}
+	public := strings.TrimRight(s.db.GetSetting(r.Context(), "primaryBaseURL", ""), "/")
+	if public == "" {
 		scheme := "http"
 		if s.secureRequest(r) {
 			scheme = "https"
@@ -123,12 +138,62 @@ func (s *Server) installCommand(r *http.Request, token string) string {
 		if fh := r.Header.Get("X-Forwarded-Host"); fh != "" {
 			host = fh
 		}
-		base = scheme + "://" + host
+		public = scheme + "://" + host
+	}
+	// The IP: the one the admin is using, else this machine's public one.
+	if ip := net.ParseIP(certs.HostOnly(r.Host)); ip != nil && !ip.IsLoopback() {
+		a.IP = ip.String()
+	}
+	if a.IP == "" || net.ParseIP(a.IP).IsPrivate() {
+		var ips []string
+		if s.certs != nil {
+			ips = s.certs.ServerIPs()
+		} else if addrs, err := net.InterfaceAddrs(); err == nil {
+			for _, ad := range addrs {
+				if n, ok := ad.(*net.IPNet); ok && !n.IP.IsLoopback() && !n.IP.IsLinkLocalUnicast() {
+					ips = append(ips, n.IP.String())
+				}
+			}
+		}
+		for _, v := range ips {
+			if ip := net.ParseIP(v); ip != nil && ip.To4() != nil && (a.IP == "" || !ip.IsPrivate()) {
+				a.IP = v
+				break
+			}
+		}
+	}
+	if a.Port == 0 {
+		if _, p, err := net.SplitHostPort(r.Host); err == nil {
+			a.Port, _ = strconv.Atoi(p)
+		}
+	}
+	if a.IP != "" && a.Port > 0 {
+		host := a.IP
+		if strings.Contains(host, ":") {
+			host = "[" + host + "]"
+		}
+		a.Direct = fmt.Sprintf("http://%s:%d", host, a.Port)
+	}
+	if public != a.Direct {
+		a.Public = public
+	}
+	return a
+}
+
+// installCommand is the one-line agent install. Reports go to the server's IP
+// first and to the public address if the IP cannot be reached.
+func (s *Server) installCommand(r *http.Request, token string) string {
+	a := s.addresses(r)
+	var to []string
+	for _, v := range []string{a.Direct, a.Public} {
+		if v != "" {
+			to = append(to, v)
+		}
 	}
 	if token == "" {
 		token = "<TOKEN>"
 	}
-	return fmt.Sprintf("bash <(curl -fsSL https://raw.githubusercontent.com/%s/main/agent.sh) --server %s --token %s", version.Repo, base, token)
+	return fmt.Sprintf("bash <(curl -fsSL https://raw.githubusercontent.com/%s/main/agent.sh) --server %s --token %s", version.Repo, strings.Join(to, ","), token)
 }
 
 func newAgentToken() (string, string, string) {
@@ -183,7 +248,7 @@ func (s *Server) handleSaveAgent(w http.ResponseWriter, r *http.Request) {
 		writeStoreErr(w, err)
 		return
 	}
-	writeJSON(w, map[string]any{"agent": s.agentView(a), "token": secret, "install": s.installCommand(r, secret)})
+	writeJSON(w, map[string]any{"agent": s.agentView(a), "token": secret, "install": s.installCommand(r, secret), "addresses": s.addresses(r)})
 }
 
 func (s *Server) handleAgentToken(w http.ResponseWriter, r *http.Request) {
@@ -203,7 +268,7 @@ func (s *Server) handleAgentToken(w http.ResponseWriter, r *http.Request) {
 		writeStoreErr(w, err)
 		return
 	}
-	writeJSON(w, map[string]any{"token": secret, "install": s.installCommand(r, secret)})
+	writeJSON(w, map[string]any{"token": secret, "install": s.installCommand(r, secret), "addresses": s.addresses(r)})
 }
 
 func (s *Server) handleDeleteAgent(w http.ResponseWriter, r *http.Request) {

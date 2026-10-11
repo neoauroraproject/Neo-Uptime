@@ -121,7 +121,15 @@ The agent only sends: it opens no port and nothing connects to it. Every 20 seco
 | `--mirror https://your-gh-proxy/` | download through a GitHub mirror |
 | `--uninstall` | remove the agent |
 
-`neo-uptime-agent test` (run it on the server) prints what the agent found and whether Neo Uptime accepted it. Run the agent one-liner again without `--server` and `--token` for a menu: update, change the address or token, send a test report, status, uninstall.
+**How reports reach Neo Uptime.** Above the command, pick one:
+
+- **Server IP** (default): straight to `http://IP:7788` of the Neo Uptime server, with the domain as a fallback.
+- **Domain**: through the public address — fine when the domain points straight at the server, not through a CDN.
+- **Through a tunnel**: for servers that cannot reach Neo Uptime directly (for example filtered routes). Forward a port of that server's BackPack or Kariz tunnel to Neo Uptime's port, and the agent reports to `http://127.0.0.1:PORT` inside the tunnel, falling back to the IP when the tunnel is down. With BackPack in reverse mode and Neo Uptime on the foreign end, add Neo Uptime's port (`7788`) to the tunnel's ports on the Iran side.
+
+`--server` accepts several comma-separated addresses; the agent uses the first one that answers and remembers it. To move an installed agent to another address, use **Change reporting address** on its card (it keeps its token).
+
+`neo-uptime-agent test` (run it on the server) prints what the agent found, which address it used and whether Neo Uptime accepted it. An offline server's card shows this command and a **Check again** button. Run the agent one-liner again without `--server` and `--token` for a menu: update, change the address or token, send a test report, status, uninstall.
 
 ## Monitor BackPack tunnels through the panel API
 
@@ -330,6 +338,14 @@ bash <(curl -fsSL https://raw.githubusercontent.com/neoauroraproject/Neo-Uptime/
 ۳. ظرف چند ثانیه سرور آنلاین می‌شود و تانل‌های BackPack و Kariz آن خودکار به مانیتور تبدیل می‌شوند.
 
 همه‌ی این کار را از **افزودن مانیتور** هم می‌شود انجام داد: «تانل» یا «سرور» را انتخاب کنید، **+ سرور جدید…** را بزنید و اسم بگذارید. در مرحله‌ی آخر دستور نصب نشان داده می‌شود، صفحه منتظر اولین گزارش سرور می‌ماند، تانل‌ها را تیک می‌زنید و مانیتورینگ شروع می‌شود. تانل‌هایی که تیک نزنید اضافه نمی‌شوند و تانل‌های جدید بعدی خودکار اضافه می‌شوند.
+
+**مسیر ارسال گزارش** را بالای دستور نصب انتخاب کنید:
+
+- **IP سرور** (پیش‌فرض): مستقیم به `http://IP:7788` سرور Neo Uptime و دامنه فقط به‌عنوان جایگزین.
+- **دامنه**: از طریق آدرس عمومی؛ وقتی مناسب است که دامنه مستقیم (نه از پشت CDN) به سرور برسد.
+- **از داخل تانل**: برای سرورهایی که مستقیم به Neo Uptime نمی‌رسند (مثلاً به‌خاطر فیلترینگ). یک پورت از تانل BackPack یا Kariz همان سرور را به پورت Neo Uptime فوروارد کنید؛ ایجنت به `http://127.0.0.1:PORT` داخل تانل گزارش می‌دهد و اگر تانل قطع باشد IP را امتحان می‌کند. در BackPack حالت reverse که Neo Uptime روی سرور خارج است، کافی است پورت `7788` را به پورت‌های تانل در سمت ایران اضافه کنید.
+
+برای عوض کردن آدرس یک ایجنت نصب‌شده، از منوی کارت سرور **تغییر آدرس گزارش‌دهی** را بزنید (توکن عوض نمی‌شود). روی کارت سرور آفلاین دستور `neo-uptime-agent test` برای پیدا کردن علت و دکمه‌ی **بررسی دوباره** هست.
 
 ایجنت فقط داده ارسال می‌کند و هیچ پورتی باز نمی‌کند. هر ۲۰ ثانیه این‌ها را با توکن به Neo Uptime می‌فرستد: پردازنده، رم، دیسک و ترافیک سرور، تانل‌های BackPack (از فایل‌های `/etc/backpack`، بدون نیاز به توکن پنل)، تانل‌های Kariz (از سوکت کنترلی در `/etc/kariz`) و پینگ هر تانل.
 

@@ -563,6 +563,9 @@ func (m *Manager) selfCheck(ctx context.Context, name string) bool {
 	return resp.StatusCode == http.StatusOK && string(body) == tok
 }
 
+// ServerIPs lists this machine's addresses, the likeliest public one first.
+func (m *Manager) ServerIPs() []string { return m.serverIPs() }
+
 // serverIPs lists this machine's addresses plus the ones the admin used, the
 // likeliest public address first: that is the one an A record should use.
 func (m *Manager) serverIPs() []string {

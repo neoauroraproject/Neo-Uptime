@@ -112,6 +112,19 @@ func TestStatusPageDomainAndPreview(t *testing.T) {
 		t.Errorf("sign-in on the status domain: %d, want 404", code)
 	}
 
+	// Agents may report through the page's domain (it may be the only name
+	// that reaches this server).
+	_, ag := h.do("POST", "/api/agents", `{"name":"edge","interval":10,"autoImport":false}`, true)
+	rep, _ := http.NewRequest("POST", h.srv.URL+"/api/agent/report", strings.NewReader(`{"format":1,"interval":10,"system":{"hostname":"e"}}`))
+	rep.Host = "status.example.com"
+	rep.Header.Set("Authorization", "Bearer "+ag["token"].(string))
+	if resp, err := http.DefaultClient.Do(rep); err != nil || resp.StatusCode != 200 {
+		t.Fatalf("agent report through the status domain: %v %v", err, resp.Status)
+	}
+	if addr := ag["addresses"].(map[string]any); addr["direct"] != "" && !strings.Contains(ag["install"].(string), "--server "+addr["direct"].(string)) {
+		t.Fatalf("install command should use the direct address first: %v %v", ag["install"], addr)
+	}
+
 	// A domain belongs to one page, and not to the panel too.
 	if code, _ := h.do("POST", "/api/status-pages", `{"title":"Two","slug":"two","domain":"status.example.com"}`, true); code != 400 {
 		t.Fatalf("second page with the same domain: %d", code)

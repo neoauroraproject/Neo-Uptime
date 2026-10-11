@@ -1157,4 +1157,22 @@ export const fa: Record<string, string> = {
   'You pick its tunnels once the agent has reported them.': 'تانل‌ها را بعد از اولین گزارش ایجنت انتخاب می‌کنید.',
   'e.g. Frankfurt edge': 'مثلاً سرور آلمان',
   '{name} and {n} tunnels are being watched.': '{name} و {n} تانل زیر نظر هستند.',
+
+  // ---------- v1.2.3: agent addresses ----------
+  'Change reporting address': 'تغییر آدرس گزارش‌دهی',
+  'Change reporting address of {name}': 'تغییر آدرس گزارش‌دهی {name}',
+  'Domain': 'دامنه',
+  'No report since {ago}. On that server, this shows why:': 'از {ago} گزارشی نرسیده. روی همان سرور این دستور علت را نشان می‌دهد:',
+  'On that server, forward a port of its BackPack or Kariz tunnel to this panel’s port {port}. Reports then travel inside the tunnel, so filtering in between does not matter; the IP is tried when the tunnel is down.': 'روی همان سرور، یک پورت از تانل BackPack یا Kariz را به پورت {port} همین پنل فوروارد کنید. گزارش‌ها از داخل تانل رد می‌شوند و فیلترینگ مسیر اثری ندارد؛ اگر تانل قطع باشد IP امتحان می‌شود.',
+  'Port on that server': 'پورت روی آن سرور',
+  'Reports go to': 'مسیر ارسال گزارش',
+  'Run it on that server. The agent keeps its token, updates itself and reports to the new address.': 'آن را روی همان سرور اجرا کنید. ایجنت توکنش را نگه می‌دارد، خودش را آپدیت می‌کند و به آدرس جدید گزارش می‌دهد.',
+  'Server IP': 'IP سرور',
+  'Straight to this server’s IP ({addr}). The domain is only tried when the IP cannot be reached.': 'مستقیم به IP همین سرور ({addr}). دامنه فقط وقتی امتحان می‌شود که IP در دسترس نباشد.',
+  'The last one came {ago}.': 'آخرین گزارش {ago} رسید.',
+  'This server’s public IP is not known here — open the panel by its IP once, or pick another way.': 'IP عمومی این سرور مشخص نیست — یک بار پنل را با IP باز کنید یا مسیر دیگری انتخاب کنید.',
+  'Through a tunnel': 'از داخل تانل',
+  'Through {addr}. Use it when the domain reaches this panel directly; behind a CDN such as Cloudflare it may not.': 'از طریق {addr}. وقتی مناسب است که دامنه مستقیم به همین پنل برسد؛ پشت CDN مثل کلودفلر ممکن است کار نکند.',
+  '{name} is reporting': '{name} در حال گزارش‌دهی است',
+  '{name}: still no report': '{name}: هنوز گزارشی نرسیده',
 }
