@@ -41,6 +41,9 @@ Neo Uptime agent installer
   --version vX.Y.Z      install a specific release
   --mirror URL          prefix for GitHub downloads when GitHub is slow or filtered
   --uninstall           remove the agent
+
+Run it again without --server/--token for a menu: update, change the address
+or token, test, status, uninstall.
 EOF
 }
 
@@ -62,6 +65,34 @@ done
 
 [ "$(id -u)" -eq 0 ] || die "run as root (sudo -i, then the command again)"
 command -v systemctl >/dev/null 2>&1 || die "systemd is required"
+
+# Run again without --server/--token on a server that has the agent: a menu.
+interactive() { [ -t 1 ] && [ -r /dev/tty ]; }
+ask() { # prompt default -> answer
+  local ans=""
+  printf '%s' "$1" >&2
+  read -r ans </dev/tty || true
+  printf '%s' "${ans:-$2}"
+}
+if [ "$UNINSTALL" -eq 0 ] && [ -z "$SERVER$TOKEN" ] && [ -x "$BIN" ] && [ -f "$ENV_FILE" ] && interactive; then
+  cur_server="$(grep -E '^NEO_AGENT_SERVER=' "$ENV_FILE" | cut -d= -f2-)"
+  cur_version="$("$BIN" version 2>/dev/null | awk '{print $2}' || true)"
+  if systemctl is-active --quiet neo-uptime-agent; then state="${c_green}running${c_off}"; else state="${c_red}stopped${c_off}"; fi
+  printf '\n  neo-uptime-agent %s · reporting to %s · %s\n\n' "${cur_version:-?}" "$cur_server" "$state"
+  printf '%s\n' "  1) Update the agent" "  2) Change the Neo Uptime address" "  3) Change the token" \
+    "  4) Send a report now (test)" "  5) Status and recent logs" "  6) Uninstall the agent" "  0) Exit" ""
+  choice="$(ask "  Choose [1]: " 1)"
+  echo
+  case "$choice" in
+    1) ;;
+    2) SERVER="$(ask "  New address (e.g. https://uptime.example.com): " "")"; [ -n "$SERVER" ] || exit 0 ;;
+    3) TOKEN="$(ask "  New token (Neo Uptime -> Servers -> New token): " "")"; [ -n "$TOKEN" ] || exit 0 ;;
+    4) set -a; . "$ENV_FILE"; set +a; "$BIN" test; exit $? ;;
+    5) systemctl --no-pager status neo-uptime-agent | head -n 12 || true; echo; journalctl -u neo-uptime-agent -n 30 --no-pager || true; exit 0 ;;
+    6) if [ "$(ask "  Remove the agent from this server? [y/N]: " n)" = "y" ]; then UNINSTALL=1; else exit 0; fi ;;
+    *) exit 0 ;;
+  esac
+fi
 
 if [ "$UNINSTALL" -eq 1 ]; then
   systemctl disable --now neo-uptime-agent >/dev/null 2>&1 || true

@@ -335,6 +335,19 @@ CREATE TABLE status_api_keys (
   active INTEGER NOT NULL DEFAULT 1
 );
 `,
+	// v3 — a domain per status page, uploaded images (logos), day-bar range.
+	`
+ALTER TABLE status_pages ADD COLUMN domain TEXT NOT NULL DEFAULT '';
+ALTER TABLE status_pages ADD COLUMN bar_days INTEGER NOT NULL DEFAULT 90;
+CREATE UNIQUE INDEX status_pages_domain ON status_pages(domain) WHERE domain <> '';
+CREATE TABLE uploads (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  name TEXT NOT NULL UNIQUE,
+  mime TEXT NOT NULL,
+  data BLOB NOT NULL,
+  created_at INTEGER NOT NULL
+);
+`,
 }
 
 func (db *DB) migrate(ctx context.Context) error {

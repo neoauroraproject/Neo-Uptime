@@ -24,6 +24,7 @@ type backupFile struct {
 	StatusPages   []*store.StatusPage    `json:"statusPages"`
 	Incidents     []*store.Incident      `json:"incidents"`
 	Maintenances  []*store.Maintenance   `json:"maintenances"`
+	Uploads       []*store.Upload        `json:"uploads,omitempty"`
 }
 
 const backupFormat = "neo-uptime-backup/1"
@@ -67,6 +68,10 @@ func (s *Server) handleExport(w http.ResponseWriter, r *http.Request) {
 		writeStoreErr(w, err)
 		return
 	}
+	if b.Uploads, err = s.db.UsedUploads(ctx); err != nil {
+		writeStoreErr(w, err)
+		return
+	}
 	w.Header().Set("Content-Disposition", fmt.Sprintf(`attachment; filename="neo-uptime-backup-%s.json"`, time.Now().Format("2006-01-02")))
 	writeJSON(w, b)
 }
@@ -100,6 +105,7 @@ func (s *Server) handleImport(w http.ResponseWriter, r *http.Request) {
 	pageCache.m = map[string]cachedPage{}
 	pageCache.mu.Unlock()
 	_ = s.mgr.ReloadMaintenance()
+	s.applyHTTPS(ctx)
 	s.hub.Publish("monitors", map[string]any{"imported": true})
 	writeJSON(w, map[string]any{"ok": true, "imported": counts})
 }
@@ -269,12 +275,22 @@ func (s *Server) restore(ctx context.Context, b *backupFile) (map[string]int, er
 		s.mgr.Upsert(m)
 	}
 
+	for _, u := range b.Uploads {
+		if store.UploadName(store.UploadPrefix+u.Name) != "" && sniffImage(u.Data) != "" {
+			_ = s.db.SaveUpload(ctx, u)
+		}
+	}
 	pageIDs := map[int64]int64{}
 	for _, p := range b.StatusPages {
 		old := p.ID
 		p.ID = 0
 		if existing, err := s.db.GetStatusPageBySlug(ctx, p.Slug); err == nil && existing != nil {
 			p.Slug = p.Slug + "-imported"
+		}
+		if d, err := normDomain(p.Domain); err != nil || d == "" {
+			p.Domain = ""
+		} else if _, taken := s.hosts.page(d); taken {
+			p.Domain = "" // the page already here keeps it
 		}
 		for gi := range p.Groups {
 			var mons []store.StatusPageMonitor
@@ -292,6 +308,7 @@ func (s *Server) restore(ctx context.Context, b *backupFile) (map[string]int, er
 		if err := s.db.SaveStatusPage(ctx, p); err != nil {
 			return counts, fmt.Errorf("status page %s: %w", p.Slug, err)
 		}
+		s.reloadHosts(ctx)
 		pageIDs[old] = p.ID
 		counts["statusPages"]++
 	}

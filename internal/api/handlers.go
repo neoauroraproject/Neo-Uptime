@@ -560,6 +560,9 @@ var settingDefaults = map[string]string{
 	"searchEngineIndex":   "false",
 	"trustProxy":          "false",
 	"timezone":            "auto",
+	"httpsEnabled":        "false",
+	"acmeEmail":           "",
+	"panelDomain":         "",
 }
 
 func (s *Server) settings(ctx context.Context) map[string]string {
@@ -619,12 +622,39 @@ func (s *Server) handlePutSettings(w http.ResponseWriter, r *http.Request) {
 			if v == "" {
 				v = "Neo Uptime"
 			}
+		case "httpsEnabled":
+			if v != "true" {
+				v = "false"
+			}
+		case "acmeEmail":
+			if v != "" && (!strings.Contains(v, "@") || strings.ContainsAny(v, " ,;")) {
+				writeErr(w, http.StatusBadRequest, "enter one e-mail address, or leave it empty")
+				return
+			}
+		case "panelDomain":
+			d, err := normDomain(v)
+			if err != nil {
+				writeErr(w, http.StatusBadRequest, err.Error())
+				return
+			}
+			if p, ok := s.hosts.page(d); ok {
+				writeErr(w, http.StatusBadRequest, "that domain is already used by the status page “"+p.title+"”")
+				return
+			}
+			v = d
 		}
 		clean[k] = v
 	}
+	before := s.settings(r.Context())
 	if err := s.db.SetSettings(r.Context(), clean); err != nil {
 		writeStoreErr(w, err)
 		return
+	}
+	for _, k := range []string{"httpsEnabled", "acmeEmail", "panelDomain"} {
+		if v, ok := clean[k]; ok && v != before[k] {
+			s.applyHTTPS(r.Context())
+			break
+		}
 	}
 	writeJSON(w, s.settings(r.Context()))
 }

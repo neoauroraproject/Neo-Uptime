@@ -1,5 +1,5 @@
 import { NavLink, Navigate, useParams } from 'react-router-dom'
-import { Archive, Bell, Code, Database, Info, KeyRound, Palette, Settings2, ShieldCheck, Tag, Users } from 'lucide-react'
+import { Archive, Bell, Code, Database, Info, KeyRound, LockKeyhole, Palette, Settings2, ShieldCheck, Tag, Users } from 'lucide-react'
 import { useApp } from '../../lib/store'
 import { clsx } from '../../lib/format'
 import { useT } from '../../lib/i18n'
@@ -7,10 +7,12 @@ import { Appearance, General, History } from './General'
 import NotificationsSettings from './Notifications'
 import Security from './Security'
 import StatusAPI from './StatusAPI'
+import HTTPS from './HTTPS'
 import { About, ApiKeys, Backup, Tags, UsersSettings } from './Admin'
 
 const sections = [
   { id: 'general', label: 'General', icon: Settings2, admin: true, el: <General /> },
+  { id: 'https', label: 'Domains & HTTPS', icon: LockKeyhole, admin: true, el: <HTTPS /> },
   { id: 'appearance', label: 'Appearance & language', icon: Palette, el: <Appearance /> },
   { id: 'notifications', label: 'Notifications', icon: Bell, el: <NotificationsSettings /> },
   { id: 'tags', label: 'Tags', icon: Tag, el: <Tags /> },

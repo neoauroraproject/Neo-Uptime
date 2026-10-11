@@ -23,6 +23,7 @@ import (
 	"github.com/neoauroraproject/Neo-Uptime/internal/api"
 	"github.com/neoauroraproject/Neo-Uptime/internal/auth"
 	"github.com/neoauroraproject/Neo-Uptime/internal/backpack"
+	"github.com/neoauroraproject/Neo-Uptime/internal/certs"
 	"github.com/neoauroraproject/Neo-Uptime/internal/monitor"
 	"github.com/neoauroraproject/Neo-Uptime/internal/store"
 	"github.com/neoauroraproject/Neo-Uptime/internal/version"
@@ -132,9 +133,19 @@ func serve(host string, port int, dataDir, certFile, keyFile string) {
 	if err := mgr.Start(ctx); err != nil {
 		log.Fatalf("starting monitors: %v", err)
 	}
+	app := api.New(db, mgr, bp, agents, hub, web.FS(), dataDir)
+	// Automatic HTTPS for the panel's and status pages' own domains. It stays
+	// off until it is turned on under Settings → Domains & HTTPS.
+	app.EnableHTTPS(ctx, certs.Config{
+		HTTPAddr:  ":" + env("NEO_UPTIME_HTTP_PORT", "80"),
+		HTTPSAddr: ":" + env("NEO_UPTIME_HTTPS_PORT", "443"),
+		CacheDir:  filepath.Join(dataDir, "certs"),
+		Directory: env("NEO_UPTIME_ACME_DIRECTORY", ""),
+		CARoots:   env("NEO_UPTIME_ACME_CA_ROOTS", ""),
+	})
 	srv := &http.Server{
 		Addr:              net.JoinHostPort(host, strconv.Itoa(port)),
-		Handler:           api.New(db, mgr, bp, agents, hub, web.FS(), dataDir),
+		Handler:           app,
 		ReadHeaderTimeout: 15 * time.Second,
 		IdleTimeout:       120 * time.Second,
 		MaxHeaderBytes:    1 << 20,

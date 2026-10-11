@@ -45,6 +45,17 @@ export function useLiveEvents() {
         /* ignore */
       }
     })
+    es.addEventListener('latency', (e) => {
+      try {
+        const d = JSON.parse((e as MessageEvent).data)
+        const name = useApp.getState().monitors[d.monitorId]?.name ?? `#${d.monitorId}`
+        const ping = d.ping != null ? Math.round(d.ping) : '?'
+        if (d.kind === 'latency') toast.error(t('{name} is slow', { name }), t('{ms} ms — above the {limit} ms limit', { ms: ping, limit: d.limit }))
+        else toast.success(t('{name} is fast again', { name }), t('{ms} ms', { ms: ping }))
+      } catch {
+        /* ignore */
+      }
+    })
     const minute = setInterval(reload, 60_000)
     return () => {
       es.close()

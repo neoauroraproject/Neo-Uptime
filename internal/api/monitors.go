@@ -276,6 +276,13 @@ func (s *Server) normalize(ctx context.Context, m *store.Monitor, existing *stor
 		}
 	}
 	m.Country = normCountry(m.Country)
+	if m.Config.LatencyAlertMs < 0 || m.Config.LatencyAlertMs > 600000 {
+		return fmt.Errorf("latency alert: use 1 to 600000 ms, or 0 to turn it off")
+	}
+	m.Config.LatencyAlertFor = max(0, min(86400, m.Config.LatencyAlertFor))
+	if m.Config.LatencyAlertMs == 0 {
+		m.Config.LatencyAlertFor = 0
+	}
 	if m.Type != monitor.TypePush {
 		m.PushToken = ""
 	}

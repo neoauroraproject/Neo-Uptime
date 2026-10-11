@@ -5,9 +5,9 @@
 # Neo Uptime
 
 **Self-hosted uptime monitoring with first-class [BackPack](https://github.com/AminMGMT/BackPack) and [Kariz](https://github.com/Erfan-XRay/Kariz) tunnel support.**
-Uptime Kuma-style monitors, a full admin panel in English and فارسی, five status-page themes and a private status API — in one small binary.
+Uptime Kuma-style monitors, a full admin panel in English and فارسی, five status-page themes on your own domains with automatic HTTPS, and a private status API — in one small binary.
 
-[Install](#install) · [Servers & agent](#servers-backpack-and-kariz-on-other-machines) · [Status pages](#status-pages) · [Status API](#show-your-status-on-your-own-website) · [فارسی](#فارسی)
+[Install](#install) · [Servers & agent](#servers-backpack-and-kariz-on-other-machines) · [Status pages](#status-pages) · [Own domain & HTTPS](#a-status-page-on-its-own-domain-with-https) · [Status API](#show-your-status-on-your-own-website) · [فارسی](#فارسی) · [Telegram channel](https://t.me/neoaurora)
 
 <img src="docs/screenshots/tunnels-dark.jpg" alt="BackPack tunnels in Neo Uptime" />
 
@@ -21,12 +21,29 @@ On a Linux server (Ubuntu, Debian, CentOS, Alma, …), as root:
 bash <(curl -fsSL https://raw.githubusercontent.com/neoauroraproject/Neo-Uptime/main/install.sh)
 ```
 
-Then open `http://SERVER-IP:7788` and create the owner account. Running the same command again upgrades in place and keeps every monitor and all history.
+It asks for a port (Enter keeps `7788`). Then open `http://SERVER-IP:7788` and create the owner account.
+
+Run the same command again later for a menu:
+
+```
+  1) Update to the latest version
+  2) Change the port
+  3) Restart
+  4) Status and recent logs
+  5) Reset a user's password
+  6) Uninstall (keep the data)
+  7) Uninstall and delete all data
+```
+
+Every action also has a flag, for scripts:
 
 | Option | |
 |---|---|
-| `--port 8080` | listen on another port (default `7788`) |
-| `--version v1.1.0` | install a specific release |
+| `--port 8080` | port for a new install (default `7788`) |
+| `--update` | update to the latest release, keeping all data |
+| `--set-port 8080` | change the port of an installed Neo Uptime |
+| `--restart` / `--status` | restart, or show status and recent logs |
+| `--version v1.2.0` | install or update to a specific release |
 | `--mirror https://your-gh-proxy/` | download through a GitHub mirror when GitHub is slow or filtered |
 | `--uninstall` / `--uninstall --purge` | remove the service (and, with `--purge`, the data) |
 
@@ -36,9 +53,11 @@ Supported CPUs: `amd64`, `arm64`, `armv7`. The binary is static: no Node, no dat
 <summary>Docker instead</summary>
 
 ```bash
-docker run -d --name neo-uptime --restart=always -p 7788:7788 \
+docker run -d --name neo-uptime --restart=always -p 7788:7788 -p 80:80 -p 443:443 \
   -v neo-uptime:/data --cap-add NET_RAW ghcr.io/neoauroraproject/neo-uptime:latest
 ```
+
+Ports 80 and 443 are only needed for [automatic HTTPS](#a-status-page-on-its-own-domain-with-https).
 </details>
 
 ## Features
@@ -51,11 +70,14 @@ docker run -d --name neo-uptime --restart=always -p 7788:7788 \
   - *Databases & queues:* PostgreSQL, MySQL/MariaDB, SQL Server, MongoDB, Redis, Kafka.
   - *Other:* Docker container, Steam game server, group.
 - **Kuma-style checks:** per-monitor intervals, retries with their own interval, timeouts, upside-down mode, re-sent alerts while down, and TLS certificate expiry warnings.
+- **Slow alerts:** get told when a tunnel's ping (or any response time) stays above a limit for a while — say 300 ms for 2 minutes — and again when it is fast again.
+- **Simple to set up:** adding a monitor is a four-step wizard (type, details, alerts, finish) with the common choices first and everything else folded away.
 - **Alerts where you are:** Telegram (finds your chat ID for you, and works through a custom API server or proxy when it is filtered), Bale, Discord, Slack/Mattermost, Microsoft Teams, Google Chat, email (SMTP), webhook, ntfy, Gotify and Pushover. Each channel sends in English or Persian.
 - **A server agent** that reads BackPack and Kariz on the machine they run on and pushes everything to Neo Uptime with a token — so Neo Uptime can live anywhere.
 - **Live dashboard:** a two-pane monitor list with heartbeat bars, groups, tags, search, filters and bulk pause/resume/delete, updated over a server-sent event stream.
 - **Monitor pages:** response-time charts (live, 3h, 24h, 7d, 30d), 24h/30d/1-year uptime, important events and full check history.
-- **Status pages:** as many as you like, in five themes (including the minimal **Zen**), in English or Persian, with country flags, incidents, scheduled maintenance and a live preview editor.
+- **Status pages:** as many as you like, in five themes (including the minimal **Zen**), in English or Persian, with country flags, an uploaded logo, incidents, scheduled maintenance and a live preview of unsaved changes.
+- **Own domains with automatic HTTPS:** give a status page (and the panel) its own domain; Neo Uptime gets and renews the Let's Encrypt certificate.
 - **Private status API** and an embeddable widget for your own website. Only the owner can create its keys.
 - **Country flags** for every server and tunnel. They are bundled SVGs, not emoji, so they look right on Windows too.
 - **Persian UI:** right-to-left layout, Persian digits and Solar Hijri dates, switchable per browser.
@@ -65,7 +87,7 @@ docker run -d --name neo-uptime --restart=always -p 7788:7788 \
 
 <table>
 <tr><td><img src="docs/screenshots/dashboard-dark.jpg" alt="Dashboard" /></td><td><img src="docs/screenshots/monitor-dark.jpg" alt="Monitor detail" /></td></tr>
-<tr><td><img src="docs/screenshots/dashboard-fa.jpg" alt="Dashboard in Persian" /></td><td><img src="docs/screenshots/add-monitor-fa.jpg" alt="Monitor types, in Persian" /></td></tr>
+<tr><td><img src="docs/screenshots/dashboard-fa.jpg" alt="Dashboard in Persian" /></td><td><img src="docs/screenshots/wizard-alerts.jpg" alt="Add-monitor wizard with a slow alert" /></td></tr>
 </table>
 
 ## Servers: BackPack and Kariz on other machines
@@ -97,7 +119,7 @@ The agent only sends: it opens no port and nothing connects to it. Every 20 seco
 | `--mirror https://your-gh-proxy/` | download through a GitHub mirror |
 | `--uninstall` | remove the agent |
 
-`neo-uptime-agent test` (run it on the server) prints what the agent found and whether Neo Uptime accepted it.
+`neo-uptime-agent test` (run it on the server) prints what the agent found and whether Neo Uptime accepted it. Run the agent one-liner again without `--server` and `--token` for a menu: update, change the address or token, send a test report, status, uninstall.
 
 ## Monitor BackPack tunnels through the panel API
 
@@ -116,6 +138,8 @@ Each tunnel monitor records its online state, real latency, traffic in and out, 
 3. In Neo Uptime open **Settings → Notifications → Add channel → Telegram**, paste the token and press **Find chats**. Pick the chat, choose the message language and send a test.
 
 Turn on **On by default** and every new monitor, server and imported tunnel uses the channel. When `api.telegram.org` is filtered, set **API server** to a relay (for example a Cloudflare Worker) or set a **Proxy** (`socks5://…`).
+
+**Slow tunnels:** in a monitor's **Alerts** step, turn on **Alert when it gets slow** and set the limit, for example *slower than 300 ms for at least 2 minutes*. You get one alert when it starts and one when it is fast again.
 
 ## Push monitors (Uptime Kuma compatible)
 
@@ -139,7 +163,21 @@ Scripts written for Kuma keep working after you change the host. If the URL is n
 
 **Zen** is the default for new pages. It shows only the status: a headline, then one quiet row per server with its flag, its bars and its uptime. It follows the visitor's light or dark setting. Each page can be in English, Persian, or follow the visitor's browser, and can hide the banner, uptime, latency and charts.
 
-Each page is served at `/status/<slug>`. Any one of them can also be shown at the site root: **Settings → General → Root address opens**.
+Bars show either the last 100 checks (the default, the same history as the dashboard) or one bar per day for the last 7, 14, 30, 60 or 90 days. Upload a logo in the page's **General** tab; it is also the browser-tab icon.
+
+Each page is served at `/status/<slug>`. Any one of them can also be shown at the site root (**Settings → General → Root address opens**) or on its own domain.
+
+## A status page on its own domain, with HTTPS
+
+1. At your DNS provider, add an **A record** for the name (for example `status.example.com`) pointing to this server's IP. With Cloudflare, use *DNS only* (grey cloud).
+2. In the status page editor, enter it under **Own domain**. The editor shows whether DNS points here yet.
+3. Under **Settings → Domains & HTTPS**, turn on **Get certificates automatically**. Neo Uptime then also listens on ports 80 and 443, gets a free Let's Encrypt certificate for every domain as soon as its DNS points here, and renews it on its own. You can give the admin panel its own domain there too.
+
+Visitors to the status domain see only that page — the admin panel, the sign-in page and the admin API are not reachable through it.
+
+<img src="docs/screenshots/editor-domain.jpg" alt="Status page editor: logo upload, own domain and HTTPS status" />
+
+If another web server already uses ports 80 and 443 (nginx, Caddy, a panel), leave automatic HTTPS off and point that server at Neo Uptime instead (see [Configuration](#configuration)); the domain still shows only its page. The ports can be changed with `NEO_UPTIME_HTTP_PORT` and `NEO_UPTIME_HTTPS_PORT`, for example when a router forwards 443 to another port.
 
 ## Show your status on your own website
 
@@ -186,7 +224,10 @@ curl -H "Authorization: Bearer sk_…" https://uptime.example.com/api/v1/status/
 NEO_UPTIME_HOST=0.0.0.0
 NEO_UPTIME_PORT=7788
 NEO_UPTIME_DATA=/var/lib/neo-uptime
-# Serve HTTPS directly; renewed certificates are picked up without a restart.
+# Ports for automatic HTTPS (Settings → Domains & HTTPS):
+#NEO_UPTIME_HTTP_PORT=80
+#NEO_UPTIME_HTTPS_PORT=443
+# Or serve the panel with your own certificate; renewals are picked up without a restart.
 #NEO_UPTIME_TLS_CERT=/etc/letsencrypt/live/uptime.example.com/fullchain.pem
 #NEO_UPTIME_TLS_KEY=/etc/letsencrypt/live/uptime.example.com/privkey.pem
 ```
@@ -239,6 +280,8 @@ The backend is Go, using SQLite through a pure-Go driver (no CGO). The UI is Rea
 
 [MIT](LICENSE). Flags from [flag-icons](https://github.com/lipis/flag-icons) (MIT).
 
+News and releases: [t.me/neoaurora](https://t.me/neoaurora)
+
 ---
 
 <div dir="rtl">
@@ -255,11 +298,12 @@ The backend is Go, using SQLite through a pure-Go driver (no CGO). The UI is Rea
 bash <(curl -fsSL https://raw.githubusercontent.com/neoauroraproject/Neo-Uptime/main/install.sh)
 ```
 
-بعد آدرس `http://IP-سرور:7788` را باز کنید و حساب مالک را بسازید. اجرای دوباره‌ی همین دستور برنامه را آپدیت می‌کند و داده‌ها حفظ می‌شوند. زبان پنل را از پایین منو (EN / فا) یا **تنظیمات ← ظاهر و زبان** عوض کنید.
+هنگام نصب پورت را می‌پرسد (Enter یعنی ۷۷۸۸). بعد آدرس `http://IP-سرور:7788` را باز کنید و حساب مالک را بسازید. زبان پنل را از پایین منو (EN / فا) یا **تنظیمات ← ظاهر و زبان** عوض کنید.
+
+اجرای دوباره‌ی همین دستور یک منو نشان می‌دهد: **آپدیت**، **تغییر پورت**، ری‌استارت، وضعیت و لاگ، بازنشانی رمز، **حذف نصب** (با حفظ داده‌ها یا همراه با حذف همه‌چیز).
 
 - اگر GitHub کند یا فیلتر است، از `--mirror https://آدرس-میرور/` استفاده کنید.
-- برای تغییر پورت از `--port 8080` استفاده کنید.
-- برای حذف برنامه از `--uninstall` استفاده کنید.
+- برای اسکریپت‌ها: `--update`، `--set-port 8080`، `--uninstall`.
 
 ### سرورهای دیگر: ایجنت برای BackPack و Kariz
 
@@ -298,9 +342,22 @@ bash <(curl -fsSL https://raw.githubusercontent.com/neoauroraproject/Neo-Uptime/
 
 اگر api.telegram.org فیلتر است، در فیلد **سرور API** آدرس یک رله (مثلاً Cloudflare Worker) یا در فیلد **پراکسی** یک `socks5://` وارد کنید.
 
+**هشدار کندی تانل:** در مرحله‌ی **هشدارها** هنگام افزودن مانیتور، **هشدار هنگام کند شدن** را روشن کنید، مثلاً «کندتر از ۳۰۰ میلی‌ثانیه به مدت دست‌کم ۲ دقیقه». یک پیام هنگام شروع کندی و یکی هنگام برگشت به حالت عادی می‌گیرید.
+
+### دامنه‌ی اختصاصی و SSL خودکار برای صفحه‌ی وضعیت
+
+۱. در پنل DNS دامنه یک رکورد **A** (مثلاً `status.example.com`) به IP همین سرور بسازید. اگر از Cloudflare استفاده می‌کنید، حالت *DNS only* (ابر خاکستری) باشد.
+
+۲. در ویرایشگر صفحه‌ی وضعیت، دامنه را در **دامنه‌ی اختصاصی** وارد کنید. همانجا لوگو را هم آپلود کنید.
+
+۳. در **تنظیمات ← دامنه‌ها و HTTPS** گزینه‌ی **دریافت خودکار گواهی SSL** را روشن کنید. Neo Uptime روی پورت‌های ۸۰ و ۴۴۳ هم گوش می‌دهد، به محض اینکه DNS به سرور اشاره کند گواهی رایگان Let’s Encrypt می‌گیرد و خودش تمدیدش می‌کند. برای خود پنل مدیریت هم می‌توانید دامنه بگذارید.
+
+روی دامنه‌ی صفحه‌ی وضعیت فقط همان صفحه دیده می‌شود؛ پنل مدیریت و صفحه‌ی ورود از آن دامنه در دسترس نیستند.
+
 ### صفحه‌ی وضعیت و API خصوصی
 
 - پوسته‌ی **Zen** (پیش‌فرض): فقط وضعیت، بدون هیچ چیز اضافه؛ روشن یا تیره مطابق دستگاه بازدیدکننده، با پرچم هر سرور.
+- نوارها یا ۱۰۰ بررسی آخر را نشان می‌دهند (پیش‌فرض، همان تاریخچه‌ی واقعی داشبورد) یا هر روز یک نوار برای ۷، ۱۴، ۳۰، ۶۰ یا ۹۰ روز اخیر.
 - هر صفحه می‌تواند فارسی، انگلیسی یا خودکار (مطابق مرورگر) باشد.
 - **API وضعیت:** فقط حساب مالک (اولین حسابی که ساخته شده) می‌تواند در **تنظیمات ← API وضعیت** کلید خصوصی بسازد. هر کلید فقط یک صفحه را می‌خواند و می‌شود آن را به آدرس سایت خودتان محدود کرد. با ویجت آماده (`embed.js`) یا با فراخوانی `GET /api/v1/status/<slug>` وضعیت را در سایت خودتان نشان دهید. نمونه‌ی کد در بخش انگلیسی بالا هست.
 
@@ -318,6 +375,10 @@ bash <(curl -fsSL https://raw.githubusercontent.com/neoauroraproject/Neo-Uptime/
   - پنجره‌ی تعمیرات (maintenance)
 - **سازگار با Push در Uptime Kuma:** اسکریپت‌های فعلی‌تان فقط با عوض کردن دامنه کار می‌کنند.
 - **فونت‌ها و پرچم‌ها داخل خود برنامه هستند:** هیچ چیزی از Google یا CDN بارگذاری نمی‌شود، پس برای سرورهای ایران مشکلی ندارد.
+
+### کانال تلگرام
+
+اخبار، نسخه‌های جدید و راهنما: [t.me/neoaurora](https://t.me/neoaurora)
 
 ### بازیابی رمز
 

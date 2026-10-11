@@ -96,7 +96,7 @@ export function DayBars({ days, count = 90, height = 30, className }: { days: Da
   const [ref, w] = useMeasure<HTMLDivElement>()
   const [tip, setTip] = useState<Tip | null>(null)
   const gap = 3
-  const fit = Math.max(10, Math.min(count, Math.floor((w + gap) / (3 + gap))))
+  const fit = Math.max(1, Math.min(count, Math.floor((w + gap) / (3 + gap))))
   const byDay = new Map(days.map((d) => [Math.floor(d.t / 86400), d]))
   const today = Math.floor(Date.now() / 86400000)
   const slots = Array.from({ length: fit }, (_, i) => today - (fit - 1 - i))

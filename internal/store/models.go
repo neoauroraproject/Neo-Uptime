@@ -106,6 +106,10 @@ type MonitorConfig struct {
 	Security    string `json:"security,omitempty"`    // SMTP: none | starttls | tls ; gRPC: tls
 	Payload     string `json:"payload,omitempty"`     // UDP
 	WarnDays    int    `json:"warnDays,omitempty"`    // TLS certificate monitor
+	// Latency alert: notify when the response time stays above LatencyAlertMs
+	// for LatencyAlertFor seconds (and again when it recovers). 0 turns it off.
+	LatencyAlertMs  int `json:"latencyAlertMs,omitempty"`
+	LatencyAlertFor int `json:"latencyAlertFor,omitempty"`
 }
 
 // Monitor is one thing being watched.
@@ -196,6 +200,8 @@ type StatusPage struct {
 	ShowUptime      bool              `json:"showUptime"`
 	ShowLatency     bool              `json:"showLatency"`
 	ShowBanner      bool              `json:"showBanner"`
+	Domain          string            `json:"domain"`  // own host name, e.g. status.example.com
+	BarDays         int               `json:"barDays"` // days shown when BarMode is "days"
 	CreatedAt       int64             `json:"createdAt"`
 	UpdatedAt       int64             `json:"updatedAt"`
 	Groups          []StatusPageGroup `json:"groups"`

@@ -19,6 +19,10 @@ import MaintenancePage from './pages/Maintenance'
 import Settings from './pages/settings/Settings'
 import NotFound from './pages/NotFound'
 
+// On a status page's own domain the server names the page to show, and the
+// app shows nothing else.
+const hostSlug = document.querySelector('meta[name="neo-status-page"]')?.getAttribute('content') ?? ''
+
 interface AuthState { setupRequired: boolean; siteTitle: string; version: string; user?: User }
 
 export default function App() {
@@ -26,7 +30,7 @@ export default function App() {
   const nav = useNavigate()
   const [state, setState] = useState<AuthState | null>(null)
   const me = useApp((s) => s.me)
-  const isPublic = loc.pathname.startsWith('/status/')
+  const isPublic = !!hostSlug || loc.pathname.startsWith('/status/')
 
   useEffect(() => {
     if (isPublic) return
@@ -46,6 +50,14 @@ export default function App() {
     })
   }, [nav])
 
+  if (hostSlug) {
+    return (
+      <>
+        <PublicStatus slug={hostSlug} />
+        <Toaster />
+      </>
+    )
+  }
   if (isPublic) {
     return (
       <>

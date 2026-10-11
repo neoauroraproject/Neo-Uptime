@@ -1,11 +1,12 @@
 import { useEffect, useRef, useState } from 'react'
-import { Download, Ellipsis, ExternalLink, KeyRound, Pencil, Plus, Tag as TagIcon, Trash2, Upload } from 'lucide-react'
+import { Download, Ellipsis, KeyRound, Pencil, Plus, Tag as TagIcon, Trash2, Upload } from 'lucide-react'
 import { api } from '../../lib/api'
 import { canEdit, useApp } from '../../lib/store'
 import { bytes, duration, fmtDate, n, timeAgo } from '../../lib/format'
 import { useT } from '../../lib/i18n'
 import type { ApiKey, Tag, User } from '../../lib/types'
 import { Alert, Badge, Button, Card, CardHeader, CopyButton, Empty, Field, IconButton, Input, Menu, Modal, Segmented, Select, Switch, TagChip, confirm, toast } from '../../components/ui'
+import { ProjectLinks } from '../../components/brand'
 
 /* ---------- tags ---------- */
 
@@ -298,7 +299,9 @@ export function About() {
         <Field label={t('Update')} help={t('Running the installer again upgrades in place and keeps your data.')}>
           <div className="flex gap-2"><code className="flex-1 min-w-0 truncate rounded-xl bg-surface-2 border border-line px-3 py-2.5 font-mono text-[12.5px]" dir="ltr">{install}</code><CopyButton text={install} /></div>
         </Field>
-        <a className="inline-flex items-center gap-2 text-sm text-accent-ink hover:underline" href={`https://github.com/${repo}`} target="_blank" rel="noreferrer" dir="ltr"><ExternalLink className="size-4" />github.com/{repo}</a>
+        <Field label={t('Project')} help={t('News, releases and help in the Telegram channel.')}>
+          <ProjectLinks labels />
+        </Field>
       </div>
     </Card>
   )

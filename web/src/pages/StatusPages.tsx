@@ -4,7 +4,7 @@ import { ExternalLink, Pencil, Plus, Rss } from 'lucide-react'
 import { api } from '../lib/api'
 import { canEdit, useApp } from '../lib/store'
 import { useT } from '../lib/i18n'
-import type { StatusPage, Theme } from '../lib/types'
+import type { HttpsStatus, StatusPage, Theme } from '../lib/types'
 import { Alert, Badge, Button, Card, Empty, Field, Input, Modal, Skeleton, toast } from '../components/ui'
 
 export const themeMeta: Record<Theme, { name: string; desc: string; swatch: string[] }> = {
@@ -13,6 +13,13 @@ export const themeMeta: Record<Theme, { name: string; desc: string; swatch: stri
   clarity: { name: 'Clarity', desc: 'Bright, airy and familiar', swatch: ['#f5f6f8', '#ffffff', '#4f46e5'] },
   lime: { name: 'Lime', desc: 'Bento cards with bold numbers', swatch: ['#efefec', '#ffffff', '#d4f36b'] },
   noir: { name: 'Noir', desc: 'Black bento with lime accents', swatch: ['#0a0a0a', '#141414', '#d4f36b'] },
+}
+
+/** Where a page with its own domain opens: HTTPS once a certificate exists. */
+export function pageURL(p: { slug: string; domain?: string }, https?: HttpsStatus | null) {
+  if (!p.domain) return `/status/${p.slug}`
+  const d = https?.domains.find((x) => x.domain === p.domain)
+  return `${d?.issued ? 'https' : 'http'}://${p.domain}`
 }
 
 export function ThemeSwatch({ theme, className }: { theme: Theme; className?: string }) {
@@ -62,16 +69,18 @@ export default function StatusPages() {
   const [err, setErr] = useState('')
   const [busy, setBusy] = useState(false)
 
+  const [https, setHttps] = useState<HttpsStatus | null>(null)
   useEffect(() => {
     api.get<StatusPage[]>('/api/status-pages').then(setPages).catch(() => setPages([]))
-  }, [])
+    if (role === 'admin') api.get<HttpsStatus>('/api/https').then(setHttps).catch(() => {})
+  }, [role])
 
   const create = async () => {
     setBusy(true)
     setErr('')
     try {
       const p = await api.post<StatusPage>('/api/status-pages', {
-        title, slug, theme: 'zen', layout: 'list', barMode: 'days', published: true, showPoweredBy: false, showCharts: false,
+        title, slug, theme: 'zen', layout: 'list', barMode: 'heartbeat', barDays: 30, published: true, showPoweredBy: false, showCharts: false,
         showUptime: true, showLatency: false, showBanner: true, language: 'auto', refreshInterval: 60, groups: [{ name: '', monitors: [] }],
       })
       toast.success(t('Status page created'))
@@ -112,7 +121,7 @@ export default function StatusPages() {
                 <div className="flex items-start justify-between gap-2">
                   <div className="min-w-0">
                     <p className="font-display text-lg font-semibold truncate" dir="auto">{p.title}</p>
-                    <p className="text-[12.5px] text-muted font-mono truncate" dir="ltr">/status/{p.slug}</p>
+                    <p className="text-[12.5px] text-muted font-mono truncate" dir="ltr">{p.domain || `/status/${p.slug}`}</p>
                   </div>
                   {p.published ? <Badge tone="up">{t('Live')}</Badge> : <Badge>{t('Draft')}</Badge>}
                 </div>
@@ -122,7 +131,7 @@ export default function StatusPages() {
                   <Badge>{p.language === 'fa' ? 'فارسی' : p.language === 'en' ? 'English' : t('Auto language')}</Badge>
                 </div>
                 <div className="mt-auto flex gap-2 pt-2">
-                  <a href={`/status/${p.slug}`} target="_blank" rel="noreferrer" className="flex-1"><Button className="w-full" size="sm" icon={<ExternalLink className="size-3.5" />}>{t('Open')}</Button></a>
+                  <a href={pageURL(p, https)} target="_blank" rel="noreferrer" className="flex-1"><Button className="w-full" size="sm" icon={<ExternalLink className="size-3.5" />}>{t('Open')}</Button></a>
                   {canEdit(role) && <Link to={`/status-pages/${p.id}`} className="flex-1"><Button className="w-full" size="sm" variant="soft" icon={<Pencil className="size-3.5" />}>{t('Edit')}</Button></Link>}
                 </div>
               </div>

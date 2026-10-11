@@ -49,10 +49,10 @@ export function duration(sec: number) {
   sec = Math.round(sec)
   if (sec < 60) return t('{s}s', { s: sec })
   const m = Math.floor(sec / 60)
-  if (m < 60) return t('{m}m {s}s', { m, s: sec % 60 })
+  if (m < 60) return sec % 60 ? t('{m}m {s}s', { m, s: sec % 60 }) : t('{m}m', { m })
   const h = Math.floor(m / 60)
-  if (h < 24) return t('{h}h {m}m', { h, m: m % 60 })
-  return t('{d}d {h}h', { d: Math.floor(h / 24), h: h % 24 })
+  if (h < 24) return m % 60 ? t('{h}h {m}m', { h, m: m % 60 }) : t('{h}h', { h })
+  return h % 24 ? t('{d}d {h}h', { d: Math.floor(h / 24), h: h % 24 }) : t('{d}d', { d: Math.floor(h / 24) })
 }
 
 export function bytes(v: number | undefined | null, frac = 1) {

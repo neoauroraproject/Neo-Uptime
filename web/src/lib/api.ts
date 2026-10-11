@@ -50,3 +50,18 @@ export const api = {
   put: <T>(p: string, b?: unknown) => request<T>('PUT', p, b ?? {}),
   del: <T>(p: string) => request<T>('DELETE', p),
 }
+
+/** Uploads an image (status page logo) and returns its URL on this server. */
+export async function uploadImage(file: File): Promise<string> {
+  const form = new FormData()
+  form.append('file', file)
+  let res: Response
+  try {
+    res = await fetch('/api/uploads', { method: 'POST', body: form, credentials: 'same-origin', headers: { 'X-Neo-Request': '1' } })
+  } catch {
+    throw new ApiError(0, 'Cannot reach the server — check your connection.')
+  }
+  const data = await res.json().catch(() => null)
+  if (!res.ok) throw new ApiError(res.status, data?.error || res.statusText)
+  return data.url as string
+}

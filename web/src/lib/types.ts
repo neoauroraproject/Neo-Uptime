@@ -49,6 +49,8 @@ export interface MonitorConfig {
   security?: string
   payload?: string
   warnDays?: number
+  latencyAlertMs?: number
+  latencyAlertFor?: number
 }
 
 export interface MonitorTag { tagId: number; name: string; color: string; value: string }
@@ -221,9 +223,37 @@ export interface StatusPage {
   showUptime: boolean
   showLatency: boolean
   showBanner: boolean
+  domain: string
+  barDays: number
   createdAt: number
   updatedAt: number
   groups: StatusPageGroup[]
+}
+
+export interface DomainStatus {
+  domain: string
+  kind: 'panel' | 'status'
+  pageId?: number
+  title?: string
+  ips: string[]
+  pointsHere: boolean
+  issued: boolean
+  notAfter?: number
+  issuer?: string
+  issuing: boolean
+  error?: string
+  checkedAt?: number
+}
+
+export interface HttpsStatus {
+  enabled: boolean
+  running: boolean
+  httpAddr: string
+  httpsAddr: string
+  listenError?: string
+  httpError?: string
+  serverIps: string[]
+  domains: DomainStatus[]
 }
 
 export interface Incident {

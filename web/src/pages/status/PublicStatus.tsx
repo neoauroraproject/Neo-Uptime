@@ -22,6 +22,7 @@ interface PubPage {
   accentColor: string; logo: string; footer: string; customCss: string; showTags: boolean; showCertExpiry: boolean
   showPoweredBy: boolean; showCharts: boolean; refreshInterval: number; published: boolean
   language: 'auto' | 'en' | 'fa'; showUptime: boolean; showLatency: boolean; showBanner: boolean
+  barDays?: number; domain?: string
 }
 interface PubData {
   page: PubPage
@@ -64,7 +65,7 @@ function StatusLabel({ s }: { s: number }) {
 
 function Bars({ m, page, height = 30, barWidth = 6 }: { m: PubMonitor; page: PubPage; height?: number; barWidth?: number }) {
   return page.barMode === 'days' && m.days
-    ? <DayBars days={m.days} height={height} />
+    ? <DayBars days={m.days} count={page.barDays || 90} height={height} />
     : <HeartbeatBar beats={m.beats.map((b) => ({ status: b.s, time: b.t, ping: b.p }))} height={height} barWidth={barWidth} gap={3} maxBeats={100} />
 }
 
@@ -196,7 +197,7 @@ function ZenRow({ m, page }: { m: PubMonitor; page: PubPage }) {
       <div className="mt-3.5">
         <Bars m={m} page={page} height={26} barWidth={5} />
         <div className="mt-2 flex items-center justify-between text-[11.5px] text-subtle bidi-auto" dir="ltr">
-          <span>{days ? t('90 days ago') : m.beats.length ? timeAgo(m.beats[0].t) : ''}</span>
+          <span>{days ? t('{n} days ago', { n: page.barDays || 90 }) : m.beats.length ? timeAgo(m.beats[0].t) : ''}</span>
           <span className="flex items-center gap-3">
             {page.showUptime && ratio >= 0 && <span className="tnum font-medium text-muted">{t('{p} uptime', { p: pct(ratio, 2) })}</span>}
             {page.showCharts && (
@@ -342,7 +343,7 @@ function MonitorRow({ m, page, theme }: { m: PubMonitor; page: PubPage; theme: T
       <div className="mt-3">
         <Bars m={m} page={page} barWidth={theme === 'clarity' ? 5 : 6} />
         <div className="mt-1.5 flex items-center justify-between text-[11.5px] text-subtle bidi-auto" dir="ltr">
-          <span>{days ? t('90 days ago') : m.beats.length ? timeAgo(m.beats[0].t) : ''}</span>
+          <span>{days ? t('{n} days ago', { n: page.barDays || 90 }) : m.beats.length ? timeAgo(m.beats[0].t) : ''}</span>
           {page.showCharts ? (
             <button onClick={() => setOpen(!open)} aria-expanded={open} className="inline-flex items-center gap-1 text-muted hover:text-fg">
               {page.showLatency && m.avgPing >= 0 ? t('avg {v}', { v: ms(m.avgPing) }) : t('Response time')}<ChevronDown className={clsx('size-3.5 transition-transform', open && 'rotate-180')} />
@@ -460,9 +461,10 @@ function pickLang(pref: string | undefined): Lang {
   return navigator.language?.toLowerCase().startsWith('fa') ? 'fa' : 'en'
 }
 
-export default function PublicStatus() {
+export default function PublicStatus({ slug: hostSlug }: { slug?: string } = {}) {
   const t = useT()
-  const { slug = '' } = useParams()
+  const { slug: routeSlug = '' } = useParams()
+  const slug = hostSlug ?? routeSlug
   const [params] = useSearchParams()
   const [d, setD] = useState<PubData | null>(null)
   const [err, setErr] = useState('')
@@ -472,9 +474,36 @@ export default function PublicStatus() {
   const useForPage = useLang((s) => s.useForPage)
 
   const preview = params.get('preview') === '1'
-  const theme = (preview && (params.get('theme') as Theme)) || d?.page.theme || 'zen'
-  const layout = (preview && (params.get('layout') as PubPage['layout'])) || d?.page.layout || 'list'
-  const langPref = (preview && params.get('lang')) || d?.page.language
+  // In the editor the page shows the unsaved draft the editor posts to it.
+  const draft = useRef<unknown>(null)
+  const [hasDraft, setHasDraft] = useState(false)
+  const reload = useRef<() => void>(() => {})
+  const fromUrl = preview && !hasDraft
+  const theme = (fromUrl && (params.get('theme') as Theme)) || d?.page.theme || 'zen'
+  const layout = (fromUrl && (params.get('layout') as PubPage['layout'])) || d?.page.layout || 'list'
+  const langPref = (fromUrl && params.get('lang')) || d?.page.language
+
+  useEffect(() => {
+    if (!preview || window.parent === window) return
+    const onMsg = (e: MessageEvent) => {
+      if (e.origin !== window.location.origin || e.data?.type !== 'neo-preview') return
+      draft.current = e.data.page
+      setHasDraft(true)
+      reload.current()
+    }
+    window.addEventListener('message', onMsg)
+    window.parent.postMessage({ type: 'neo-preview-ready' }, window.location.origin)
+    return () => window.removeEventListener('message', onMsg)
+  }, [preview])
+
+  useEffect(() => {
+    const logo = d?.page.logo
+    const link = document.querySelector<HTMLLinkElement>('link[rel="icon"]')
+    if (!logo || !link) return
+    const prev = link.href
+    link.href = logo
+    return () => { link.href = prev }
+  }, [d?.page.logo])
 
   useEffect(() => {
     useForPage(pickLang(langPref ?? undefined))
@@ -483,7 +512,11 @@ export default function PublicStatus() {
   useEffect(() => {
     let alive = true
     const load = () => {
-      api.get<PubData>(`/api/status-page/${encodeURIComponent(slug)}`, { quiet401: true })
+      clearTimeout(timer.current)
+      const req = draft.current
+        ? api.post<PubData>('/api/status-pages/preview', draft.current)
+        : api.get<PubData>(`/api/status-page/${encodeURIComponent(slug)}`, { quiet401: true })
+      req
         .then((r) => {
           if (!alive) return
           setD(r)
@@ -498,6 +531,7 @@ export default function PublicStatus() {
           timer.current = setTimeout(load, 30000)
         })
     }
+    reload.current = load
     load()
     return () => {
       alive = false

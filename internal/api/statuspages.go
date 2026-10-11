@@ -1,7 +1,9 @@
 package api
 
 import (
+	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"regexp"
 	"slices"
@@ -51,6 +53,7 @@ func (s *Server) handleSaveStatusPage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	p.ID = 0
+	oldSlug, oldDomain := "", ""
 	if id, ok := pathID(r, "id"); ok {
 		existing, err := s.db.GetStatusPage(r.Context(), id)
 		if err != nil {
@@ -59,49 +62,43 @@ func (s *Server) handleSaveStatusPage(w http.ResponseWriter, r *http.Request) {
 		}
 		p.ID = existing.ID
 		p.CreatedAt = existing.CreatedAt
+		oldSlug, oldDomain = existing.Slug, existing.Domain
 		if r.URL.Query().Get("meta") == "1" {
 			// Only the settings changed; keep the groups as they are.
 			p.Groups = existing.Groups
 		}
 	}
-	p.Slug = strings.ToLower(strings.TrimSpace(p.Slug))
-	p.Title = strings.TrimSpace(p.Title)
-	if p.Title == "" {
-		writeErr(w, http.StatusBadRequest, "title is required")
+	if err := normPage(&p); err != nil {
+		writeErr(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	if !slugRe.MatchString(p.Slug) {
-		writeErr(w, http.StatusBadRequest, "slug may only contain lowercase letters, digits and dashes")
-		return
-	}
-	if !slices.Contains(themes, p.Theme) {
-		p.Theme = "zen"
-	}
-	if p.Language != "en" && p.Language != "fa" {
-		p.Language = "auto"
-	}
-	if !slices.Contains(layouts, p.Layout) {
-		p.Layout = "list"
-	}
-	if p.BarMode != "days" {
-		p.BarMode = "heartbeat"
-	}
-	if p.RefreshInterval == 0 {
-		p.RefreshInterval = 60
-	}
-	p.RefreshInterval = max(10, min(3600, p.RefreshInterval))
-	if len(p.CustomCSS) > 64<<10 {
-		writeErr(w, http.StatusBadRequest, "custom CSS is limited to 64 KB")
-		return
-	}
-	if p.Groups == nil {
-		p.Groups = []store.StatusPageGroup{}
+	if p.Domain != oldDomain {
+		if c := callerFrom(r); c == nil || c.Role != roleAdmin {
+			writeErr(w, http.StatusForbidden, "only an admin can change a status page's domain")
+			return
+		}
+		if p.Domain != "" {
+			if p.Domain == s.db.GetSetting(r.Context(), "panelDomain", "") {
+				writeErr(w, http.StatusBadRequest, "that domain is already used by the panel")
+				return
+			}
+			if other, ok := s.hosts.page(p.Domain); ok && other.id != p.ID {
+				writeErr(w, http.StatusBadRequest, "that domain is already used by the page “"+other.title+"”")
+				return
+			}
+		}
 	}
 	if err := s.db.SaveStatusPage(r.Context(), &p); err != nil {
 		writeStoreErr(w, err)
 		return
 	}
 	pageCache.drop(p.Slug)
+	pageCache.drop(oldSlug)
+	s.reloadHosts(r.Context())
+	if p.Domain != "" && p.Domain != oldDomain && s.certs != nil {
+		s.certs.Issue(p.Domain, false)
+	}
+	_ = s.db.PruneUploads(r.Context(), time.Now().Add(-time.Hour).Unix())
 	saved, err := s.db.GetStatusPage(r.Context(), p.ID)
 	if err != nil {
 		writeStoreErr(w, err)
@@ -126,7 +123,56 @@ func (s *Server) handleDeleteStatusPage(w http.ResponseWriter, r *http.Request) 
 		writeStoreErr(w, err)
 		return
 	}
+	s.reloadHosts(r.Context())
+	_ = s.db.PruneUploads(r.Context(), time.Now().Add(-time.Hour).Unix())
 	writeJSON(w, map[string]any{"ok": true})
+}
+
+// normPage checks a page from the editor and fills in defaults.
+func normPage(p *store.StatusPage) error {
+	p.Slug = strings.ToLower(strings.TrimSpace(p.Slug))
+	p.Title = strings.TrimSpace(p.Title)
+	if p.Title == "" {
+		return errors.New("title is required")
+	}
+	if !slugRe.MatchString(p.Slug) {
+		return errors.New("slug may only contain lowercase letters, digits and dashes")
+	}
+	if !slices.Contains(themes, p.Theme) {
+		p.Theme = "zen"
+	}
+	if p.Language != "en" && p.Language != "fa" {
+		p.Language = "auto"
+	}
+	if !slices.Contains(layouts, p.Layout) {
+		p.Layout = "list"
+	}
+	if p.BarMode != "days" {
+		p.BarMode = "heartbeat"
+	}
+	if p.BarDays == 0 {
+		p.BarDays = 90
+	}
+	p.BarDays = max(1, min(365, p.BarDays))
+	if p.RefreshInterval == 0 {
+		p.RefreshInterval = 60
+	}
+	p.RefreshInterval = max(10, min(3600, p.RefreshInterval))
+	if len(p.CustomCSS) > 64<<10 {
+		return errors.New("custom CSS is limited to 64 KB")
+	}
+	if len(p.Logo) > 2048 {
+		return errors.New("the logo address is too long — upload the image instead")
+	}
+	d, err := normDomain(p.Domain)
+	if err != nil {
+		return err
+	}
+	p.Domain = d
+	if p.Groups == nil {
+		p.Groups = []store.StatusPageGroup{}
+	}
+	return nil
 }
 
 func (s *Server) handleListIncidents(w http.ResponseWriter, r *http.Request) {
@@ -287,9 +333,7 @@ func (c *pageCacheT) drop(slug string) {
 func (s *Server) handlePublicStatusPage(w http.ResponseWriter, r *http.Request) {
 	slug := strings.ToLower(r.PathValue("slug"))
 	if body, ok := pageCache.get(slug); ok {
-		w.Header().Set("Content-Type", "application/json; charset=utf-8")
-		w.Header().Set("Cache-Control", "public, max-age=10")
-		_, _ = w.Write(body)
+		writePublicJSON(w, body)
 		return
 	}
 	ctx := r.Context()
@@ -304,18 +348,56 @@ func (s *Server) handlePublicStatusPage(w http.ResponseWriter, r *http.Request) 
 			return
 		}
 	}
+	body, err := json.Marshal(s.publicPage(ctx, p))
+	if err != nil {
+		writeErr(w, http.StatusInternalServerError, "encoding failed")
+		return
+	}
+	if p.Published {
+		pageCache.put(slug, body)
+	}
+	writePublicJSON(w, body)
+}
 
+// writePublicJSON sends a status page. Browsers must not keep it: the page
+// refreshes on its own and a stale copy would hide a fresh save. The server
+// cache above absorbs the load.
+func writePublicJSON(w http.ResponseWriter, body []byte) {
+	w.Header().Set("Content-Type", "application/json; charset=utf-8")
+	w.Header().Set("Cache-Control", "no-cache")
+	_, _ = w.Write(body)
+}
+
+// handlePreviewStatusPage renders a page from the editor's unsaved state.
+func (s *Server) handlePreviewStatusPage(w http.ResponseWriter, r *http.Request) {
+	var p store.StatusPage
+	if err := readJSON(r, &p); err != nil {
+		writeErr(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	// A half-typed title, slug or domain must not stop the preview.
+	title := strings.TrimSpace(p.Title)
+	if !slugRe.MatchString(strings.ToLower(strings.TrimSpace(p.Slug))) {
+		p.Slug = "preview"
+	}
+	p.Title, p.Domain = "-", ""
+	if err := normPage(&p); err != nil {
+		writeErr(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	p.Title = title
+	writeJSON(w, s.publicPage(r.Context(), &p))
+}
+
+// publicPage builds what a status page shows.
+func (s *Server) publicPage(ctx context.Context, p *store.StatusPage) map[string]any {
 	var ids []int64
 	for _, g := range p.Groups {
 		for _, m := range g.Monitors {
 			ids = append(ids, m.MonitorID)
 		}
 	}
-	all, err := s.db.ListMonitors(ctx)
-	if err != nil {
-		writeStoreErr(w, err)
-		return
-	}
+	all, _ := s.db.ListMonitors(ctx)
 	byID := map[int64]*store.Monitor{}
 	for _, m := range all {
 		byID[m.ID] = m
@@ -327,7 +409,7 @@ func (s *Server) handlePublicStatusPage(w http.ResponseWriter, r *http.Request) 
 	if len(ids) > 0 {
 		beats, _ = s.db.RecentHeartbeats(ctx, ids, 100)
 		if p.BarMode == "days" {
-			since := time.Now().UTC().AddDate(0, 0, -89)
+			since := time.Now().UTC().AddDate(0, 0, -(max(1, p.BarDays) - 1))
 			since = time.Date(since.Year(), since.Month(), since.Day(), 0, 0, 0, 0, time.UTC)
 			days, _ = s.db.Buckets(ctx, ids, true, since)
 		}
@@ -398,7 +480,9 @@ func (s *Server) handlePublicStatusPage(w http.ResponseWriter, r *http.Request) 
 			}
 			pg.Monitors = append(pg.Monitors, pm)
 		}
-		groups = append(groups, pg)
+		if len(pg.Monitors) > 0 {
+			groups = append(groups, pg)
+		}
 	}
 
 	overall := "operational"
@@ -449,22 +533,12 @@ func (s *Server) handlePublicStatusPage(w http.ResponseWriter, r *http.Request) 
 		"customCss": p.CustomCSS, "showTags": p.ShowTags, "showCertExpiry": p.ShowCertExpiry,
 		"showPoweredBy": p.ShowPoweredBy, "showCharts": p.ShowCharts, "refreshInterval": p.RefreshInterval,
 		"published": p.Published, "language": p.Language, "showUptime": p.ShowUptime,
-		"showLatency": p.ShowLatency, "showBanner": p.ShowBanner,
+		"showLatency": p.ShowLatency, "showBanner": p.ShowBanner, "barDays": p.BarDays, "domain": p.Domain,
 	}
-	body, err := json.Marshal(map[string]any{
+	return map[string]any{
 		"page": page, "groups": groups, "overall": overall, "incidents": incidents,
 		"maintenance": maint, "updatedAt": now.UnixMilli(),
-	})
-	if err != nil {
-		writeErr(w, http.StatusInternalServerError, "encoding failed")
-		return
 	}
-	if p.Published {
-		pageCache.put(slug, body)
-	}
-	w.Header().Set("Content-Type", "application/json; charset=utf-8")
-	w.Header().Set("Cache-Control", "public, max-age=10")
-	_, _ = w.Write(body)
 }
 
 func (s *Server) handlePublicChart(w http.ResponseWriter, r *http.Request) {

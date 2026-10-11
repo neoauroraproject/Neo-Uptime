@@ -9,6 +9,7 @@ import type { User } from '../lib/types'
 import { Alert, Button, Checkbox, Field, Input } from '../components/ui'
 import { Logo } from '../components/meta'
 import { LangSwitch } from '../components/Shell'
+import { ProjectLinks } from '../components/brand'
 
 function AuthLayout({ children }: { children: ReactNode }) {
   const t = useT()
@@ -56,6 +57,7 @@ function AuthLayout({ children }: { children: ReactNode }) {
             {children}
           </div>
         </div>
+        <ProjectLinks className="justify-center" />
       </div>
     </div>
   )

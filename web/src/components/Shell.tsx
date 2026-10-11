@@ -9,6 +9,7 @@ import { clsx, n } from '../lib/format'
 import { useLang, useT, type Lang } from '../lib/i18n'
 import { Button, Menu } from './ui'
 import { Logo } from './meta'
+import { ProjectLinks } from './brand'
 
 const nav = [
   { to: '/dashboard', label: 'Dashboard', icon: LayoutDashboard },
@@ -89,6 +90,7 @@ export default function Shell() {
   useLiveEvents()
   const t = useT()
   const me = useApp((s) => s.me)
+  const version = useApp((s) => s.version)
   const role = useApp((s) => s.role)
   const live = useApp((s) => s.live)
   const settings = useApp((s) => s.settings)
@@ -166,6 +168,10 @@ export default function Shell() {
         <div className="flex gap-2">
           <ThemeSwitch />
           <LangSwitch compact />
+        </div>
+        <div className="flex items-center justify-between px-1">
+          <span className="text-[11.5px] text-subtle" dir="ltr">Neo Uptime {version}</span>
+          <ProjectLinks />
         </div>
         <Menu
           align="start"

@@ -9,14 +9,14 @@ import (
 
 const statusPageCols = `id, slug, title, description, theme, layout, bar_mode, accent_color, logo, footer,
   custom_css, show_tags, show_cert_expiry, show_powered_by, show_charts, published, refresh_interval,
-  created_at, updated_at, language, show_uptime, show_latency, show_banner`
+  created_at, updated_at, language, show_uptime, show_latency, show_banner, domain, bar_days`
 
 func scanStatusPage(s scanner) (*StatusPage, error) {
 	var p StatusPage
 	var tags, cert, powered, charts, pub, upt, lat, ban int
 	if err := s.Scan(&p.ID, &p.Slug, &p.Title, &p.Description, &p.Theme, &p.Layout, &p.BarMode, &p.AccentColor,
 		&p.Logo, &p.Footer, &p.CustomCSS, &tags, &cert, &powered, &charts, &pub, &p.RefreshInterval,
-		&p.CreatedAt, &p.UpdatedAt, &p.Language, &upt, &lat, &ban); err != nil {
+		&p.CreatedAt, &p.UpdatedAt, &p.Language, &upt, &lat, &ban, &p.Domain, &p.BarDays); err != nil {
 		return nil, err
 	}
 	p.ShowUptime, p.ShowLatency, p.ShowBanner = upt == 1, lat == 1, ban == 1
@@ -67,6 +67,24 @@ func (db *DB) GetStatusPageBySlug(ctx context.Context, slug string) (*StatusPage
 	return p, db.loadGroups(ctx, p)
 }
 
+// StatusDomains maps each status page domain to its page's slug.
+func (db *DB) StatusDomains(ctx context.Context) (map[string]string, error) {
+	rows, err := db.r.QueryContext(ctx, `SELECT domain, slug FROM status_pages WHERE domain <> ''`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := map[string]string{}
+	for rows.Next() {
+		var d, slug string
+		if err := rows.Scan(&d, &slug); err != nil {
+			return nil, err
+		}
+		out[d] = slug
+	}
+	return out, rows.Err()
+}
+
 func (db *DB) loadGroups(ctx context.Context, p *StatusPage) error {
 	rows, err := db.r.QueryContext(ctx, `SELECT g.id, g.name, m.monitor_id, m.show_url
 		FROM status_page_groups g LEFT JOIN status_page_monitors m ON m.group_id = g.id
@@ -106,11 +124,11 @@ func (db *DB) SaveStatusPage(ctx context.Context, p *StatusPage) error {
 			p.CreatedAt = t
 			res, err := tx.ExecContext(ctx, `INSERT INTO status_pages (slug, title, description, theme, layout, bar_mode,
 				accent_color, logo, footer, custom_css, show_tags, show_cert_expiry, show_powered_by, show_charts,
-				published, refresh_interval, created_at, updated_at, language, show_uptime, show_latency, show_banner)
-				VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+				published, refresh_interval, created_at, updated_at, language, show_uptime, show_latency, show_banner, domain, bar_days)
+				VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
 				p.Slug, p.Title, p.Description, p.Theme, p.Layout, p.BarMode, p.AccentColor, p.Logo, p.Footer, p.CustomCSS,
 				b2i(p.ShowTags), b2i(p.ShowCertExpiry), b2i(p.ShowPoweredBy), b2i(p.ShowCharts), b2i(p.Published),
-				p.RefreshInterval, t, t, p.Language, b2i(p.ShowUptime), b2i(p.ShowLatency), b2i(p.ShowBanner))
+				p.RefreshInterval, t, t, p.Language, b2i(p.ShowUptime), b2i(p.ShowLatency), b2i(p.ShowBanner), p.Domain, p.BarDays)
 			if err != nil {
 				return err
 			}
@@ -119,10 +137,10 @@ func (db *DB) SaveStatusPage(ctx context.Context, p *StatusPage) error {
 			_, err := tx.ExecContext(ctx, `UPDATE status_pages SET slug=?, title=?, description=?, theme=?, layout=?,
 				bar_mode=?, accent_color=?, logo=?, footer=?, custom_css=?, show_tags=?, show_cert_expiry=?,
 				show_powered_by=?, show_charts=?, published=?, refresh_interval=?, updated_at=?, language=?,
-				show_uptime=?, show_latency=?, show_banner=? WHERE id=?`,
+				show_uptime=?, show_latency=?, show_banner=?, domain=?, bar_days=? WHERE id=?`,
 				p.Slug, p.Title, p.Description, p.Theme, p.Layout, p.BarMode, p.AccentColor, p.Logo, p.Footer, p.CustomCSS,
 				b2i(p.ShowTags), b2i(p.ShowCertExpiry), b2i(p.ShowPoweredBy), b2i(p.ShowCharts), b2i(p.Published),
-				p.RefreshInterval, t, p.Language, b2i(p.ShowUptime), b2i(p.ShowLatency), b2i(p.ShowBanner), p.ID)
+				p.RefreshInterval, t, p.Language, b2i(p.ShowUptime), b2i(p.ShowLatency), b2i(p.ShowBanner), p.Domain, p.BarDays, p.ID)
 			if err != nil {
 				return err
 			}

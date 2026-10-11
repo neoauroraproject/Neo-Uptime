@@ -1,18 +1,84 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
-import { ArrowDown, ArrowLeft, ArrowUp, Cable, ExternalLink, Eye, EyeOff, Megaphone, Plus, Save, Server, Trash2, X } from 'lucide-react'
-import { api } from '../lib/api'
+import { ArrowDown, ArrowLeft, ArrowUp, Cable, CircleCheck, CircleDashed, ExternalLink, Eye, EyeOff, Globe, ImageUp, LockKeyhole, Megaphone, Plus, Save, Server, Trash2, TriangleAlert, X } from 'lucide-react'
+import { api, uploadImage } from '../lib/api'
 import { useApp } from '../lib/store'
-import { clsx, fmtDateTime } from '../lib/format'
+import { clsx, fmtDate, fmtDateTime } from '../lib/format'
 import { useT } from '../lib/i18n'
-import type { Incident, StatusPage, Theme } from '../lib/types'
-import { Alert, Badge, Card, Field, IconButton, Input, Segmented, Select, Skeleton, Switch, Textarea, Button, confirm, toast } from '../components/ui'
-import { ThemeSwatch, slugify, themeMeta } from './StatusPages'
+import type { HttpsStatus, Incident, StatusPage, Theme } from '../lib/types'
+import { Alert, Badge, Card, CopyButton, Field, IconButton, Input, Segmented, Select, Skeleton, Spinner, Switch, Textarea, Button, confirm, toast } from '../components/ui'
+import { ThemeSwatch, pageURL, slugify, themeMeta } from './StatusPages'
 import { TypeIcon } from '../components/meta'
 import { Flag } from '../components/flag'
 import { monitorCountry } from './Dashboard'
 
 type Tab = 'general' | 'appearance' | 'monitors' | 'incidents'
+
+function LogoField({ value, onChange }: { value: string; onChange: (v: string) => void }) {
+  const t = useT()
+  const file = useRef<HTMLInputElement>(null)
+  const [busy, setBusy] = useState(false)
+  const pick = async (f: File) => {
+    setBusy(true)
+    try {
+      onChange(await uploadImage(f))
+    } catch (e) {
+      toast.error(t('Upload failed'), (e as Error).message)
+    } finally {
+      setBusy(false)
+      if (file.current) file.current.value = ''
+    }
+  }
+  return (
+    <Field label={t('Logo')} help={t('PNG, JPEG, WebP, SVG or ICO, up to 2 MB. Square works best; it is also the tab icon.')}>
+      <div className="flex items-center gap-3">
+        <div className="grid place-items-center size-14 shrink-0 rounded-2xl border border-line bg-surface-2 overflow-hidden">
+          {value ? <img src={value} alt="" className="size-full object-contain" /> : <ImageUp className="size-5 text-subtle" />}
+        </div>
+        <div className="flex flex-wrap gap-2">
+          <input ref={file} type="file" accept="image/png,image/jpeg,image/webp,image/gif,image/svg+xml,image/x-icon,.ico" className="hidden" onChange={(e) => e.target.files?.[0] && pick(e.target.files[0])} />
+          <Button size="sm" loading={busy} icon={<ImageUp className="size-3.5" />} onClick={() => file.current?.click()}>{value ? t('Replace') : t('Upload logo')}</Button>
+          {value && <Button size="sm" variant="ghost" icon={<X className="size-3.5" />} onClick={() => onChange('')}>{t('Remove')}</Button>}
+        </div>
+      </div>
+      <Input dir="ltr" className="mt-2 font-mono text-[12.5px]" value={value} onChange={(e) => onChange(e.target.value)} placeholder={t('…or paste an image address')} aria-label={t('Logo address')} />
+    </Field>
+  )
+}
+
+function DomainState({ domain, https, onRefresh }: { domain: string; https: HttpsStatus | null | undefined; onRefresh: () => void }) {
+  const t = useT()
+  const role = useApp((s) => s.role)
+  if (!domain) return null
+  if (https === undefined) return <div className="flex items-center gap-2 text-[13px] text-muted"><Spinner className="size-3.5" />{t('Checking the domain…')}</div>
+  const d = https?.domains.find((x) => x.domain === domain)
+  const ip = https?.serverIps[0] ?? t('this server’s IP')
+  return (
+    <div className="rounded-2xl border border-line bg-surface-2/50 p-3.5 space-y-2.5 text-[13px]">
+      <div>
+        <p className="text-muted">{t('At your DNS provider add an A record:')}</p>
+        <div className="mt-1.5 flex items-center gap-2"><code className="flex-1 min-w-0 truncate rounded-lg bg-surface border border-line px-2.5 py-1.5 font-mono text-[12.5px]" dir="ltr">{domain}  A  {ip}</code><CopyButton text={ip} /></div>
+      </div>
+      {d && (
+        <div className="flex flex-wrap gap-x-4 gap-y-1.5">
+          <span className={clsx('inline-flex items-center gap-1.5', d.pointsHere ? 'text-up' : 'text-pending')}>
+            {d.pointsHere ? <CircleCheck className="size-4" /> : <TriangleAlert className="size-4" />}
+            {d.pointsHere ? t('DNS points here') : d.ips.length ? t('DNS points to {ip}', { ip: d.ips.join(', ') }) : t('No DNS record yet')}
+          </span>
+          <span className={clsx('inline-flex items-center gap-1.5', d.issued ? 'text-up' : 'text-muted')}>
+            {d.issued ? <LockKeyhole className="size-4" /> : d.issuing ? <Spinner className="size-3.5" /> : <CircleDashed className="size-4" />}
+            {d.issued ? t('HTTPS until {d}', { d: fmtDate((d.notAfter ?? 0) * 1000) }) : d.issuing ? t('Getting a certificate…') : t('No certificate yet')}
+          </span>
+        </div>
+      )}
+      {d?.error && !d.issued && <p className="text-[12.5px] text-down" dir="auto">{d.error}</p>}
+      {https && !https.enabled && (
+        <p className="text-muted">{t('For HTTPS, turn on automatic certificates in')} {role === 'admin' ? <Link to="/settings/https" className="text-accent-ink hover:underline">{t('Settings → Domains & HTTPS')}</Link> : t('Settings → Domains & HTTPS')}.</p>
+      )}
+      <button type="button" onClick={onRefresh} className="text-[12.5px] text-accent-ink hover:underline">{t('Check again')}</button>
+    </div>
+  )
+}
 
 function IncidentsTab({ pageId }: { pageId: number }) {
   const t = useT()
@@ -88,13 +154,38 @@ export default function StatusPageEditor() {
   const [dirty, setDirty] = useState(false)
   const [busy, setBusy] = useState(false)
   const [err, setErr] = useState('')
-  const [reload, setReload] = useState(0)
   const [entry, setEntry] = useState('')
+  const [https, setHttps] = useState<HttpsStatus | null | undefined>(undefined)
+  const frame = useRef<HTMLIFrameElement>(null)
+  const loadHttps = () => {
+    if (role !== 'admin') return setHttps(null)
+    api.get<HttpsStatus>('/api/https').then(setHttps).catch(() => setHttps(null))
+  }
 
   useEffect(() => {
     api.get<StatusPage>(`/api/status-pages/${id}`).then((r) => { setP(r); setSavedSlug(r.slug) }).catch((e) => setErr(e.message))
     if (role === 'admin') api.get<Record<string, string>>('/api/settings').then((s) => setEntry(s.entryPage)).catch(() => {})
+    loadHttps()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id, role])
+
+  // The preview shows the draft: the page in the frame asks for it once it
+  // has loaded, and gets every change after that.
+  const latest = useRef<StatusPage | null>(null)
+  latest.current = p
+  useEffect(() => {
+    const send = () => frame.current?.contentWindow?.postMessage({ type: 'neo-preview', page: latest.current }, window.location.origin)
+    const onMsg = (e: MessageEvent) => {
+      if (e.origin === window.location.origin && e.data?.type === 'neo-preview-ready' && e.source === frame.current?.contentWindow) send()
+    }
+    window.addEventListener('message', onMsg)
+    return () => window.removeEventListener('message', onMsg)
+  }, [])
+  useEffect(() => {
+    if (!p) return
+    const h = setTimeout(() => frame.current?.contentWindow?.postMessage({ type: 'neo-preview', page: p }, window.location.origin), 250)
+    return () => clearTimeout(h)
+  }, [p])
 
   const used = useMemo(() => new Set(p?.groups.flatMap((g) => g.monitors.map((m) => m.monitorId)) ?? []), [p])
   const sortedMonitors = useMemo(() => Object.values(monitors).sort((a, b) => a.name.localeCompare(b.name)), [monitors])
@@ -112,7 +203,7 @@ export default function StatusPageEditor() {
       setP(r)
       setSavedSlug(r.slug)
       setDirty(false)
-      setReload((x) => x + 1)
+      if (r.domain) loadHttps()
       toast.success(t('Status page saved'))
     } catch (e) {
       setErr((e as Error).message)
@@ -150,10 +241,14 @@ export default function StatusPageEditor() {
   const addAll = (filter: (m: (typeof sortedMonitors)[number]) => boolean, name: string) => {
     const list = sortedMonitors.filter((m) => filter(m) && !used.has(m.id))
     if (!list.length) return toast.info(t('They are all on this page already'))
-    setGroups([...p.groups, { name, monitors: list.map((m) => ({ monitorId: m.id, showUrl: false })) }])
+    const group = { name, monitors: list.map((m) => ({ monitorId: m.id, showUrl: false })) }
+    // A new page starts with one empty, unnamed group: fill that one.
+    const blank = p.groups.findIndex((g) => !g.name.trim() && g.monitors.length === 0)
+    setGroups(blank >= 0 ? p.groups.map((g, i) => (i === blank ? group : g)) : [...p.groups, group])
   }
 
-  const previewSrc = `/status/${savedSlug}?preview=1&theme=${p.theme}&layout=${p.layout}&lang=${p.language}&r=${reload}`
+  const previewSrc = `/status/${savedSlug}?preview=1`
+  const openURL = pageURL({ slug: savedSlug, domain: p.domain }, https)
 
   return (
     <div className="p-4 sm:p-6 lg:p-8 max-w-[1700px]">
@@ -163,7 +258,7 @@ export default function StatusPageEditor() {
           <h1 className="mt-2 font-display text-[26px] font-semibold tracking-tight truncate" dir="auto">{p.title}</h1>
         </div>
         <div className="flex items-center gap-2">
-          <a href={`/status/${savedSlug}`} target="_blank" rel="noreferrer"><Button icon={<ExternalLink className="size-4" />}>{t('Open')}</Button></a>
+          <a href={openURL} target="_blank" rel="noreferrer"><Button icon={<ExternalLink className="size-4" />}>{t('Open')}</Button></a>
           <Button variant="primary" loading={busy} disabled={!dirty} onClick={save} icon={<Save className="size-4" />}>{dirty ? t('Save changes') : t('Saved')}</Button>
         </div>
       </div>
@@ -185,7 +280,14 @@ export default function StatusPageEditor() {
                     <option value="en">English</option>
                   </Select>
                 </Field>
-                <Field label={t('Logo URL')} htmlFor="l" help={t('Square image, shown beside the title.')}><Input id="l" dir="ltr" value={p.logo} onChange={(e) => up({ logo: e.target.value })} placeholder="https://example.com/logo.png" /></Field>
+                <LogoField value={p.logo} onChange={(v) => up({ logo: v })} />
+                <Field label={t('Own domain (optional)')} htmlFor="dom" help={role === 'admin' ? t('Show this page at its own address, such as status.example.com. Visitors there see only this page.') : t('Only an admin can change the domain.')}>
+                  <div className="relative">
+                    <Globe className="absolute start-3 top-1/2 -translate-y-1/2 size-4 text-subtle pointer-events-none" />
+                    <Input id="dom" dir="ltr" className="font-mono ps-9" value={p.domain} disabled={role !== 'admin'} onChange={(e) => up({ domain: e.target.value.trim().toLowerCase() })} placeholder="status.example.com" />
+                  </div>
+                </Field>
+                {!dirty && <DomainState domain={p.domain} https={https} onRefresh={loadHttps} />}
                 <Field label={t('Footer text')} htmlFor="f"><Textarea id="f" dir="auto" className="min-h-16" value={p.footer} onChange={(e) => up({ footer: e.target.value })} placeholder={t('Questions? support@example.com')} /></Field>
                 <Switch checked={p.published} onChange={(v) => up({ published: v })} label={t('Published')} description={t('Off keeps it visible only to signed-in users.')} />
                 {role === 'admin' && (
@@ -211,8 +313,15 @@ export default function StatusPageEditor() {
                 </Field>
                 <div className="grid grid-cols-2 gap-4">
                   <Field label={t('Layout')}><Segmented ariaLabel={t('Layout')} value={p.layout} onChange={(v) => up({ layout: v })} options={[{ value: 'list', label: t('List') }, { value: 'cards', label: t('Cards') }]} /></Field>
-                  <Field label={t('Bars show')}><Segmented ariaLabel={t('Bars show')} value={p.barMode} onChange={(v) => up({ barMode: v })} options={[{ value: 'heartbeat', label: t('Checks') }, { value: 'days', label: t('90 days') }]} /></Field>
+                  <Field label={t('Bars show')}><Segmented ariaLabel={t('Bars show')} value={p.barMode} onChange={(v) => up({ barMode: v })} options={[{ value: 'heartbeat', label: t('Checks') }, { value: 'days', label: t('Days') }]} /></Field>
                 </div>
+                {p.barMode === 'days' ? (
+                  <Field label={t('Days shown')} htmlFor="bd" help={t('One bar per day, coloured by that day’s uptime.')}>
+                    <Select id="bd" value={p.barDays || 90} onChange={(e) => up({ barDays: Number(e.target.value) })}>
+                      {[7, 14, 30, 60, 90].map((d) => <option key={d} value={d}>{t('{n} days', { n: d })}</option>)}
+                    </Select>
+                  </Field>
+                ) : <p className="-mt-2 text-[12.5px] text-muted">{t('One bar per check, the last 100 — what the dashboard shows.')}</p>}
                 <div className="space-y-3.5">
                   <Switch checked={p.showBanner} onChange={(v) => up({ showBanner: v })} label={t('Overall status line')} description={t('“All systems operational” at the top.')} />
                   <Switch checked={p.showUptime} onChange={(v) => up({ showUptime: v })} label={t('Uptime percentage')} />
@@ -291,14 +400,14 @@ export default function StatusPageEditor() {
 
         <div className="xl:sticky xl:top-6 space-y-2">
           <div className="flex items-center justify-between text-[13px] text-muted px-1">
-            <span>{t('Preview')}{dirty && <span className="text-pending"> · {t('theme, layout and language are live; other changes show after saving')}</span>}</span>
+            <span>{t('Preview')}{dirty && <span className="text-pending"> · {t('unsaved — visitors see it after you save')}</span>}</span>
           </div>
           <div className="rounded-[22px] border border-line-strong overflow-hidden bg-surface shadow-[var(--shadow-pop)]">
             <div className="flex items-center gap-1.5 px-4 h-9 border-b border-line bg-surface-2" dir="ltr">
               <span className="size-2.5 rounded-full bg-down/70" /><span className="size-2.5 rounded-full bg-pending/70" /><span className="size-2.5 rounded-full bg-up/70" />
-              <span className="ms-3 text-[12px] text-subtle font-mono truncate">{window.location.host}/status/{savedSlug}</span>
+              <span className="ms-3 text-[12px] text-subtle font-mono truncate">{p.domain || `${window.location.host}/status/${savedSlug}`}</span>
             </div>
-            <iframe key={previewSrc} title={t('Status page preview')} src={previewSrc} className="w-full h-[78vh] bg-white" />
+            <iframe ref={frame} key={previewSrc} title={t('Status page preview')} src={previewSrc} className="w-full h-[78vh] bg-white" />
           </div>
         </div>
       </div>

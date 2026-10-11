@@ -18,6 +18,7 @@ import (
 
 	"github.com/neoauroraproject/Neo-Uptime/internal/auth"
 	"github.com/neoauroraproject/Neo-Uptime/internal/backpack"
+	"github.com/neoauroraproject/Neo-Uptime/internal/certs"
 	"github.com/neoauroraproject/Neo-Uptime/internal/monitor"
 	"github.com/neoauroraproject/Neo-Uptime/internal/store"
 )
@@ -34,6 +35,8 @@ type Server struct {
 	started time.Time
 	mux     *http.ServeMux
 	dataDir string
+	hosts   hostTable
+	certs   *certs.Manager // nil until EnableHTTPS
 }
 
 // New builds the server. static is the built web app.
@@ -46,6 +49,7 @@ func New(db *store.DB, mgr *monitor.Manager, bp *backpack.Cache, agents *monitor
 		dataDir: dataDir,
 	}
 	s.routes()
+	s.reloadHosts(context.Background())
 	return s
 }
 
@@ -67,6 +71,7 @@ func (s *Server) routes() {
 	m.HandleFunc("POST /api/agent/report", s.handleAgentReport)
 	m.HandleFunc("GET /api/v1/status/{slug}", s.handleStatusV1)
 	m.HandleFunc("OPTIONS /api/v1/status/{slug}", s.handleStatusV1)
+	m.HandleFunc("GET /uploads/{name}", s.handleGetUpload)
 
 	// signed in — viewer
 	m.HandleFunc("GET /api/me", s.need(roleViewer, s.handleMe))
@@ -135,6 +140,8 @@ func (s *Server) routes() {
 	m.HandleFunc("POST /api/backpack/panels/{id}/import", s.need(roleEditor, s.handleImportTunnels))
 	m.HandleFunc("POST /api/agents/{id}/import", s.need(roleEditor, s.handleImportAgentTunnels))
 	m.HandleFunc("POST /api/notifications/telegram/chats", s.need(roleEditor, s.handleTelegramChats))
+	m.HandleFunc("POST /api/status-pages/preview", s.need(roleEditor, s.handlePreviewStatusPage))
+	m.HandleFunc("POST /api/uploads", s.need(roleEditor, s.handleUpload))
 
 	// admin, browser session only
 	m.HandleFunc("GET /api/settings", s.admin(s.handleGetSettings))
@@ -156,6 +163,8 @@ func (s *Server) routes() {
 	m.HandleFunc("PUT /api/agents/{id}", s.admin(s.handleSaveAgent))
 	m.HandleFunc("DELETE /api/agents/{id}", s.admin(s.handleDeleteAgent))
 	m.HandleFunc("POST /api/agents/{id}/token", s.admin(s.handleAgentToken))
+	m.HandleFunc("GET /api/https", s.admin(s.handleHTTPSStatus))
+	m.HandleFunc("POST /api/https/issue", s.admin(s.handleHTTPSIssue))
 
 	// owner only
 	m.HandleFunc("GET /api/status-api-keys", s.owner(s.handleListStatusKeys))
@@ -186,6 +195,10 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	} else {
 		h.Set("Content-Security-Policy", csp+"; frame-ancestors 'none'")
 		h.Set("X-Frame-Options", "DENY")
+	}
+	if pg, ok := s.hosts.page(certs.HostOnly(r.Host)); ok {
+		s.serveStatusHost(w, r, pg)
+		return
 	}
 	s.mux.ServeHTTP(w, r)
 }
@@ -227,14 +240,7 @@ func (s *Server) handleStatic(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
-	data, err := fs.ReadFile(s.static, "index.html")
-	if err != nil {
-		http.Error(w, "web app not built — run `make web` before building the binary", http.StatusServiceUnavailable)
-		return
-	}
-	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	w.Header().Set("Cache-Control", "no-cache")
-	_, _ = w.Write(data)
+	s.serveIndex(w, pageHost{})
 }
 
 func (s *Server) handleRobots(w http.ResponseWriter, r *http.Request) {

@@ -36,6 +36,8 @@ type State struct {
 	lastPush  time.Time
 	downSince time.Time
 	downCount int
+	slowSince time.Time // first check above the latency limit, in this run
+	slowSent  bool      // the latency alert went out and recovery is pending
 	inMaint   bool
 }
 
@@ -518,6 +520,7 @@ func (mg *Manager) process(ctx context.Context, m *store.Monitor, res Result) in
 			st.downCount = 0
 		}
 	}
+	latency := mg.latencyEvent(m, st, hb, now)
 	cert, tunnel, system, agentInfo := st.Cert, st.Tunnel, st.System, st.Agent
 	st.mu.Unlock()
 
@@ -540,6 +543,17 @@ func (mg *Manager) process(ctx context.Context, m *store.Monitor, res Result) in
 		ev.Downtime = downtime
 		go mg.sendAll(m.ID, ev)
 	}
+	if latency != nil {
+		ev := mg.baseEvent(ctx, m)
+		ev.Kind = latency.kind
+		ev.Status = store.StatusUp
+		ev.Ping = hb.Ping
+		ev.Time = now
+		ev.LatencyLimit = m.Config.LatencyAlertMs
+		ev.SlowFor = latency.slowFor
+		mg.pub.Publish("latency", map[string]any{"monitorId": m.ID, "kind": latency.kind, "ping": hb.Ping, "limit": m.Config.LatencyAlertMs})
+		go mg.sendAll(m.ID, ev)
+	}
 	if res.Cert != nil && m.Config.CertExpiryNotify && status != store.StatusMaintenance {
 		mg.checkCert(ctx, m, res.Cert)
 	}
@@ -552,6 +566,45 @@ func (mg *Manager) process(ctx context.Context, m *store.Monitor, res Result) in
 		}
 	}
 	return status
+}
+
+type latencyChange struct {
+	kind    string // latency | latency-ok
+	slowFor time.Duration
+}
+
+// latencyEvent tracks the response time against the monitor's latency limit.
+// It returns an alert once the time has stayed above the limit for the set
+// duration, and a recovery once it is back under. The caller holds st.mu.
+func (mg *Manager) latencyEvent(m *store.Monitor, st *State, hb *store.Heartbeat, now time.Time) *latencyChange {
+	limit := m.Config.LatencyAlertMs
+	if limit <= 0 || hb.Status == store.StatusMaintenance {
+		st.slowSince, st.slowSent = time.Time{}, false
+		return nil
+	}
+	if hb.Status != store.StatusUp || hb.Ping == nil {
+		// Down is reported by the status alert; start the clock again later.
+		st.slowSince = time.Time{}
+		return nil
+	}
+	if *hb.Ping > float64(limit) {
+		if st.slowSince.IsZero() {
+			st.slowSince = now
+		}
+		hold := time.Duration(max(m.Config.LatencyAlertFor, 0)) * time.Second
+		if !st.slowSent && now.Sub(st.slowSince) >= hold {
+			st.slowSent = true
+			return &latencyChange{kind: "latency", slowFor: now.Sub(st.slowSince)}
+		}
+		return nil
+	}
+	slowFor := now.Sub(st.slowSince)
+	st.slowSince = time.Time{}
+	if st.slowSent {
+		st.slowSent = false
+		return &latencyChange{kind: "latency-ok", slowFor: slowFor}
+	}
+	return nil
 }
 
 func truncate(s string, n int) string {
@@ -614,14 +667,20 @@ func (mg *Manager) sendAll(monitorID int64, ev notify.Event) {
 		log.Printf("notifications for monitor %d: %v", monitorID, err)
 		return
 	}
+	// Send to every channel at once, and wait: the context above ends when
+	// this function returns.
+	var wg sync.WaitGroup
 	for _, n := range list {
+		wg.Add(1)
 		go func(n *store.Notification) {
+			defer wg.Done()
 			if err := notify.Send(ctx, n.Type, n.Config, ev); err != nil {
 				log.Printf("notification %q (%s) failed: %v", n.Name, n.Type, err)
 				mg.pub.Publish("notification-error", map[string]any{"notification": n.Name, "error": err.Error(), "monitorId": monitorID})
 			}
 		}(n)
 	}
+	wg.Wait()
 }
 
 // checkCert warns once per threshold per certificate.

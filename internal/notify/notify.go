@@ -24,7 +24,7 @@ const (
 
 // Event is one thing worth telling someone about.
 type Event struct {
-	Kind        string    `json:"kind"` // status | cert | test
+	Kind        string    `json:"kind"` // status | cert | latency | latency-ok | test
 	MonitorID   int64     `json:"monitorId"`
 	MonitorName string    `json:"monitorName"`
 	MonitorType string    `json:"monitorType"`
@@ -39,6 +39,10 @@ type Event struct {
 	Downtime time.Duration `json:"-"`
 	// CertDays is the days left on a certificate, for cert events.
 	CertDays int `json:"certDays,omitempty"`
+	// LatencyLimit and SlowFor describe a latency event: the threshold in ms
+	// and how long the response time has been above it.
+	LatencyLimit int           `json:"latencyLimit,omitempty"`
+	SlowFor      time.Duration `json:"-"`
 	// Lang is the message language: "en" (default) or "fa".
 	Lang string `json:"-"`
 	// TZ is the zone times are written in; empty means UTC.
@@ -107,7 +111,7 @@ func statusDot(s int) string {
 // Color returns the event's colour as 0xRRGGBB.
 func (e Event) Color() int {
 	switch {
-	case e.Kind == "cert":
+	case e.Kind == "cert", e.Kind == "latency":
 		return 0xf59e0b
 	case e.Status == StatusUp:
 		return 0x22c55e
@@ -127,6 +131,10 @@ func (e Event) Title() string {
 			return "🧪 پیام آزمایشی Neo Uptime"
 		case "cert":
 			return fmt.Sprintf("⚠️ [%s] گواهی SSL تا %s روز دیگر منقضی می‌شود", e.MonitorName, faDigits(fmt.Sprint(e.CertDays)))
+		case "latency":
+			return fmt.Sprintf("🐢 [%s] تأخیر بالاست: %s میلی‌ثانیه", e.MonitorName, faDigits(e.pingText()))
+		case "latency-ok":
+			return fmt.Sprintf("✅ [%s] تأخیر به حالت عادی برگشت: %s میلی‌ثانیه", e.MonitorName, faDigits(e.pingText()))
 		}
 		words := map[int]string{StatusUp: "دوباره در دسترس است", StatusDown: "قطع شد", StatusPending: "در انتظار بررسی", StatusMaintenance: "در حالت تعمیرات"}
 		return fmt.Sprintf("%s [%s] %s", statusDot(e.Status), e.MonitorName, words[e.Status])
@@ -136,6 +144,10 @@ func (e Event) Title() string {
 		return "🧪 Neo Uptime test notification"
 	case "cert":
 		return fmt.Sprintf("⚠️ [%s] certificate expires in %d days", e.MonitorName, e.CertDays)
+	case "latency":
+		return fmt.Sprintf("🐢 [%s] latency is high: %s ms", e.MonitorName, e.pingText())
+	case "latency-ok":
+		return fmt.Sprintf("✅ [%s] latency is back to normal: %s ms", e.MonitorName, e.pingText())
 	}
 	return fmt.Sprintf("%s [%s] is %s", statusDot(e.Status), e.MonitorName, StatusWord(e.Status))
 }
@@ -164,6 +176,20 @@ func (e Event) Lines() [][2]string {
 			v = faDigits(fmt.Sprintf("%.0f", *e.Ping)) + " میلی‌ثانیه"
 		}
 		l = append(l, [2]string{lb("Response", "زمان پاسخ"), v})
+	}
+	if e.LatencyLimit > 0 {
+		v := fmt.Sprintf("%d ms", e.LatencyLimit)
+		if e.fa() {
+			v = faDigits(fmt.Sprint(e.LatencyLimit)) + " میلی‌ثانیه"
+		}
+		l = append(l, [2]string{lb("Alert above", "حد هشدار"), v})
+	}
+	if e.SlowFor > 0 {
+		v := humanDuration(e.SlowFor)
+		if e.fa() {
+			v = faDuration(e.SlowFor)
+		}
+		l = append(l, [2]string{lb("Slow for", "مدت کندی"), v})
 	}
 	if e.Downtime > 0 {
 		v := humanDuration(e.Downtime)
@@ -196,6 +222,13 @@ func faDuration(d time.Duration) string {
 		parts = append(parts, fmt.Sprintf("%d ثانیه", s))
 	}
 	return faDigits(strings.Join(parts, " و "))
+}
+
+func (e Event) pingText() string {
+	if e.Ping == nil {
+		return "?"
+	}
+	return fmt.Sprintf("%.0f", *e.Ping)
 }
 
 // LinkLabel is the text of the dashboard link.
