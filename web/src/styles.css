@@ -360,7 +360,7 @@ button:disabled { cursor: not-allowed; }
   :where(html[dir='ltr'] [dir='auto']:not(input, textarea, .truncate)) {
     text-align: left;
   }
-  :where(html[dir] [dir='auto'].truncate) {
+  :where(html[dir] [dir='auto'].truncate, html[dir='rtl'] [dir='ltr'].truncate) {
     width: fit-content;
     max-width: 100%;
   }

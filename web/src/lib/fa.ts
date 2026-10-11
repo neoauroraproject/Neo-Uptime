@@ -1117,4 +1117,13 @@ export const fa: Record<string, string> = {
   '{m}m': '{m} دقیقه',
   '{h}h': '{h} ساعت',
   '{d}d': '{d} روز',
+
+  // ---------- v1.2.1: instant SSL ----------
+  'An admin can turn on HTTPS for this domain.': 'مدیر می‌تواند HTTPS را برای این دامنه روشن کند.',
+  'Get SSL anyway': 'دریافت SSL در هر صورت',
+  'Get SSL now': 'دریافت فوری SSL',
+  'Let’s Encrypt can only issue once the A record points here; a failed try is allowed a few times an hour.': 'Let’s Encrypt فقط وقتی رکورد A به این سرور اشاره کند گواهی می‌دهد؛ تلاش ناموفق فقط چند بار در ساعت مجاز است.',
+  'The panel has HTTPS on {d}': 'پنل روی {d} با HTTPS در دسترس است',
+  'Use it as the public address, so alert links, push URLs and agent commands have no port.': 'آن را آدرس عمومی کنید تا لینک هشدارها، آدرس‌های Push و دستور ایجنت بدون پورت باشند.',
+  'Use {u}': 'استفاده از {u}',
 }

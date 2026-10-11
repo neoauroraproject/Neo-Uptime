@@ -495,23 +495,60 @@ export interface MenuItem { label: string; icon?: ReactNode; onClick?: () => voi
 
 export function Menu({ trigger, items, align = 'end' }: { trigger: (p: { onClick: () => void; 'aria-expanded': boolean }) => ReactNode; items: MenuItem[]; align?: 'start' | 'end' }) {
   const [open, setOpen] = useState(false)
+  const [pos, setPos] = useState<{ top: number; left: number } | null>(null)
   const ref = useRef<HTMLDivElement>(null)
+  const menu = useRef<HTMLDivElement>(null)
+
+  // The list is drawn on top of the page (a portal), so a card that clips its
+  // content cannot cut it off. It opens upwards when there is no room below.
+  useLayoutEffect(() => {
+    if (!open) {
+      setPos(null)
+      return
+    }
+    const place = () => {
+      const tr = ref.current?.getBoundingClientRect()
+      const m = menu.current
+      if (!tr || !m) return
+      const w = m.offsetWidth
+      const h = m.offsetHeight
+      const rtl = getComputedStyle(ref.current!).direction === 'rtl'
+      const alignRight = (align === 'end') !== rtl
+      let left = alignRight ? tr.right - w : tr.left
+      left = Math.max(8, Math.min(left, window.innerWidth - w - 8))
+      let top = tr.bottom + 8
+      if (top + h > window.innerHeight - 8 && tr.top - 8 - h >= 8) top = tr.top - 8 - h
+      top = Math.max(8, Math.min(top, window.innerHeight - h - 8))
+      setPos({ top, left })
+    }
+    place()
+    window.addEventListener('resize', place)
+    return () => window.removeEventListener('resize', place)
+  }, [open, align])
+
   useEffect(() => {
     if (!open) return
-    const onDoc = (e: MouseEvent) => { if (!ref.current?.contains(e.target as Node)) setOpen(false) }
+    const inside = (e: Event) => ref.current?.contains(e.target as Node) || menu.current?.contains(e.target as Node)
+    const onDoc = (e: MouseEvent) => { if (!inside(e)) setOpen(false) }
     const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') setOpen(false) }
+    const onScroll = (e: Event) => { if (!menu.current?.contains(e.target as Node)) setOpen(false) }
     document.addEventListener('mousedown', onDoc)
     document.addEventListener('keydown', onKey)
+    window.addEventListener('scroll', onScroll, true)
     return () => {
       document.removeEventListener('mousedown', onDoc)
       document.removeEventListener('keydown', onKey)
+      window.removeEventListener('scroll', onScroll, true)
     }
   }, [open])
+
   return (
     <div ref={ref} className="relative inline-block">
       {trigger({ onClick: () => setOpen((o) => !o), 'aria-expanded': open })}
-      {open && (
-        <div role="menu" className={clsx('absolute z-40 mt-2 min-w-48 rounded-2xl border border-line-strong bg-surface p-1.5 shadow-[var(--shadow-pop)] fade-up', align === 'end' ? 'end-0' : 'start-0')}>
+      {open && createPortal(
+        <div ref={menu} role="menu" style={{ top: pos?.top ?? 0, left: pos?.left ?? 0, visibility: pos ? 'visible' : 'hidden' }}
+          dir={ref.current ? getComputedStyle(ref.current).direction : undefined}
+          className="fixed z-[65] min-w-48 max-w-[calc(100vw-16px)] rounded-2xl border border-line-strong bg-surface p-1.5 shadow-[var(--shadow-pop)] fade-up">
           {items.map((it, i) =>
             it.divider ? (
               <div key={i} className="my-1 h-px bg-line" />
@@ -525,7 +562,7 @@ export function Menu({ trigger, items, align = 'end' }: { trigger: (p: { onClick
                   it.onClick?.()
                 }}
                 className={clsx(
-                  'flex w-full items-center gap-2.5 rounded-xl px-3 h-9 text-sm text-start transition-colors disabled:opacity-40',
+                  'flex w-full items-center gap-2.5 rounded-xl px-3 h-9 text-sm text-start whitespace-nowrap transition-colors disabled:opacity-40',
                   it.danger ? 'text-down hover:bg-down/10' : 'text-fg hover:bg-surface-2',
                 )}
               >
@@ -534,7 +571,8 @@ export function Menu({ trigger, items, align = 'end' }: { trigger: (p: { onClick
               </button>
             ),
           )}
-        </div>
+        </div>,
+        document.body,
       )}
     </div>
   )

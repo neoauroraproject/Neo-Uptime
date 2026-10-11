@@ -5,6 +5,8 @@ import { api } from '../../lib/api'
 import { clsx, fmtDate } from '../../lib/format'
 import { useT } from '../../lib/i18n'
 import type { HttpsStatus } from '../../lib/types'
+import { useApp } from '../../lib/store'
+import { domainURL } from '../StatusPages'
 import { Alert, Badge, Button, Card, CardHeader, CopyButton, Empty, Field, Input, Skeleton, Spinner, Switch, toast } from '../../components/ui'
 
 type S = Record<string, string>
@@ -50,7 +52,7 @@ export default function HTTPS() {
   }
   const issue = async (domain: string) => {
     try {
-      await api.post('/api/https/issue', { domain })
+      await api.post('/api/https/issue', { domain, enable: true })
       toast.info(t('Requesting a certificate for {d}…', { d: domain }))
       setTimeout(loadStatus, 800)
     } catch (e) {
@@ -58,6 +60,17 @@ export default function HTTPS() {
     }
   }
   const ip = st?.serverIps[0]
+  const panel = st?.domains.find((d) => d.kind === 'panel' && d.domain === s.panelDomain)
+  const panelURL = panel?.issued && st?.running ? domainURL(panel.domain, st) : ''
+  const usePanelURL = async () => {
+    try {
+      setS(await api.put<S>('/api/settings', { primaryBaseURL: panelURL }))
+      await useApp.getState().loadSettings()
+      toast.success(t('Settings saved'))
+    } catch (e) {
+      toast.error(t('Could not save'), (e as Error).message)
+    }
+  }
 
   return (
     <>
@@ -78,6 +91,12 @@ export default function HTTPS() {
           {st?.listenError && <Alert tone="danger">{st.listenError}</Alert>}
           {st?.httpError && <Alert tone="warning">{st.httpError}</Alert>}
           {st?.running && !st.listenError && <p className="flex items-center gap-2 text-[13px] text-up"><CircleCheck className="size-4" />{t('Listening on {a} and {b}.', { a: st.httpsAddr, b: st.httpAddr })}</p>}
+          {panelURL && s.primaryBaseURL !== panelURL && (
+            <Alert tone="success" title={t('The panel has HTTPS on {d}', { d: s.panelDomain })}>
+              {t('Use it as the public address, so alert links, push URLs and agent commands have no port.')}{' '}
+              <button type="button" className="text-accent-ink underline" onClick={usePanelURL}>{t('Use {u}', { u: panelURL })}</button>
+            </Alert>
+          )}
           <div className="flex justify-end"><Button variant="primary" loading={busy} icon={<Save className="size-4" />} onClick={save}>{t('Save')}</Button></div>
         </div>
       </Card>
@@ -110,10 +129,10 @@ export default function HTTPS() {
                   {d.issued ? t('HTTPS until {d}', { d: fmtDate((d.notAfter ?? 0) * 1000) }) : d.issuing ? t('Getting a certificate…') : t('No certificate yet')}
                 </span>
                 <div className="flex gap-2 ms-auto">
-                  {!d.issued && st.running && <Button size="sm" variant="soft" disabled={d.issuing} onClick={() => issue(d.domain)}>{t('Get certificate')}</Button>}
-                  <a href={`${d.issued ? 'https' : 'http'}://${d.domain}`} target="_blank" rel="noreferrer"><Button size="sm" icon={<ExternalLink className="size-3.5" />}>{t('Open')}</Button></a>
+                  {!d.issued && <Button size="sm" variant="soft" loading={d.issuing} onClick={() => issue(d.domain)}>{t('Get SSL now')}</Button>}
+                  <a href={domainURL(d.domain, st)} target="_blank" rel="noreferrer"><Button size="sm" icon={<ExternalLink className="size-3.5" />}>{t('Open')}</Button></a>
                 </div>
-                {d.error && !d.issued && <p className="basis-full text-[12.5px] text-down" dir="auto">{d.error}</p>}
+                {d.error && d.pointsHere && !d.issued && <p className="basis-full text-[12.5px] text-down" dir="auto">{d.error}</p>}
               </div>
             ))}
           </div>

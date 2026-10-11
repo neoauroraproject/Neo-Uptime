@@ -18,8 +18,15 @@ export const themeMeta: Record<Theme, { name: string; desc: string; swatch: stri
 /** Where a page with its own domain opens: HTTPS once a certificate exists. */
 export function pageURL(p: { slug: string; domain?: string }, https?: HttpsStatus | null) {
   if (!p.domain) return `/status/${p.slug}`
-  const d = https?.domains.find((x) => x.domain === p.domain)
-  return `${d?.issued ? 'https' : 'http'}://${p.domain}`
+  return domainURL(p.domain, https)
+}
+
+/** A domain's address: https:// once it has a certificate, with a port only off 443. */
+export function domainURL(domain: string, https?: HttpsStatus | null) {
+  const d = https?.domains.find((x) => x.domain === domain)
+  if (!d?.issued || !https?.running) return `http://${domain}`
+  const port = https.httpsAddr.split(':').pop()
+  return `https://${domain}${port && port !== '443' ? `:${port}` : ''}`
 }
 
 export function ThemeSwatch({ theme, className }: { theme: Theme; className?: string }) {

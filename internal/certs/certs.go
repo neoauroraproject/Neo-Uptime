@@ -75,9 +75,10 @@ type Status struct {
 }
 
 type attempt struct {
-	busy bool
-	err  string
-	at   int64
+	busy      bool
+	forceNext bool // a forced request came in while a checked one ran
+	err       string
+	at        int64
 }
 
 // Manager runs the HTTPS listeners.
@@ -297,7 +298,7 @@ func (m *Manager) servePlain(w http.ResponseWriter, r *http.Request) {
 		m.handler.ServeHTTP(w, r)
 		return
 	}
-	target := "https://" + host + portSuffix(m.cfg.HTTPSAddr, "443") + r.URL.RequestURI()
+	target := m.HTTPSURL(host) + r.URL.RequestURI()
 	code := http.StatusMovedPermanently
 	if r.Method != http.MethodGet && r.Method != http.MethodHead {
 		code = http.StatusPermanentRedirect
@@ -317,14 +318,43 @@ func portSuffix(addr, def string) string {
 // starts its automatic renewal.
 func (m *Manager) warm(force bool) {
 	for _, d := range m.src.Domains() {
-		m.Issue(d.Name, force)
+		_ = m.Issue(d.Name, force)
 	}
+}
+
+// ErrNotRunning is returned when HTTPS is off or could not listen.
+var ErrNotRunning = errors.New("automatic HTTPS is not running")
+
+// Running reports whether the HTTPS listener is up.
+func (m *Manager) Running() bool {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.ac != nil
+}
+
+// ListenError is why the HTTPS listener is not up, if it failed.
+func (m *Manager) ListenError() string {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.listenErr
+}
+
+// Secure reports whether host can be served over HTTPS right now.
+func (m *Manager) Secure(host string) bool {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.ac != nil && m.haveCert[host]
+}
+
+// HTTPSURL is the https:// address of host, with the port only when it is not 443.
+func (m *Manager) HTTPSURL(host string) string {
+	return "https://" + host + portSuffix(m.cfg.HTTPSAddr, "443")
 }
 
 // Issue gets a certificate for name in the background. Without force it first
 // checks that the name points at this server, so a missing DNS record does not
 // use up Let's Encrypt's failed-validation allowance.
-func (m *Manager) Issue(name string, force bool) {
+func (m *Manager) Issue(name string, force bool) error {
 	m.mu.Lock()
 	ac := m.ac
 	a := m.attempts[name]
@@ -332,37 +362,60 @@ func (m *Manager) Issue(name string, force bool) {
 		a = &attempt{}
 		m.attempts[name] = a
 	}
-	if ac == nil || a.busy {
+	if ac == nil {
 		m.mu.Unlock()
-		return
+		return ErrNotRunning
+	}
+	if a.busy {
+		// Do not drop an explicit request: run it when the current one ends.
+		a.forceNext = a.forceNext || force
+		m.mu.Unlock()
+		return nil
 	}
 	a.busy = true
 	m.mu.Unlock()
 
 	go func() {
-		var err error
-		if !m.cached(name) && !force {
-			if ips, here := m.pointsHere(name); !here {
-				if len(ips) == 0 {
-					err = fmt.Errorf("%s has no DNS record yet", name)
-				} else {
-					err = fmt.Errorf("%s points to %s, which does not look like this server", name, strings.Join(ips, ", "))
-				}
+		for {
+			err := m.obtain(ac, name, force)
+			m.mu.Lock()
+			if err != nil && a.forceNext && !force {
+				a.forceNext, force = false, true
+				m.mu.Unlock()
+				continue
 			}
+			a.forceNext = false
+			m.finish(a, name, err)
+			m.mu.Unlock()
+			return
 		}
-		if err == nil {
-			_, err = ac.GetCertificate(ecdsaHello(name))
-		}
-		m.mu.Lock()
-		a.busy, a.at, a.err = false, time.Now().Unix(), ""
-		if err != nil {
-			a.err = err.Error()
-			log.Printf("https: %s: %v", name, err)
-		} else {
-			m.haveCert[name] = true
-		}
-		m.mu.Unlock()
 	}()
+	return nil
+}
+
+// obtain gets (or loads) the certificate for name.
+func (m *Manager) obtain(ac *autocert.Manager, name string, force bool) error {
+	if !m.cached(name) && !force {
+		if ips, here := m.pointsHere(name); !here {
+			if len(ips) == 0 {
+				return fmt.Errorf("%s has no DNS record yet", name)
+			}
+			return fmt.Errorf("%s points to %s, which does not look like this server", name, strings.Join(ips, ", "))
+		}
+	}
+	_, err := ac.GetCertificate(ecdsaHello(name))
+	return err
+}
+
+// finish records an attempt's outcome. The caller holds m.mu.
+func (m *Manager) finish(a *attempt, name string, err error) {
+	a.busy, a.at, a.err = false, time.Now().Unix(), ""
+	if err != nil {
+		a.err = err.Error()
+		log.Printf("https: %s: %v", name, err)
+		return
+	}
+	m.haveCert[name] = true
 }
 
 func ecdsaHello(name string) *tls.ClientHelloInfo {

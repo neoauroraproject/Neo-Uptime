@@ -178,9 +178,13 @@ func (s *Server) handleHTTPSStatus(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, s.certs.Status(r.Context()))
 }
 
+// handleHTTPSIssue requests a certificate for one domain now. With enable it
+// first turns automatic HTTPS on, so a status page can get its certificate
+// straight from the editor.
 func (s *Server) handleHTTPSIssue(w http.ResponseWriter, r *http.Request) {
 	var in struct {
 		Domain string `json:"domain"`
+		Enable bool   `json:"enable"`
 	}
 	if err := readJSON(r, &in); err != nil {
 		writeErr(w, http.StatusBadRequest, err.Error())
@@ -198,9 +202,45 @@ func (s *Server) handleHTTPSIssue(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusBadRequest, "that domain is not set on the panel or a status page")
 		return
 	}
+	ctx := r.Context()
+	if in.Enable && s.db.GetSetting(ctx, "httpsEnabled", "false") != "true" {
+		if err := s.db.SetSettings(ctx, map[string]string{"httpsEnabled": "true"}); err != nil {
+			writeStoreErr(w, err)
+			return
+		}
+	}
+	if !s.certs.Running() {
+		s.certs.Apply(context.WithoutCancel(ctx))
+	}
 	s.certs.Hint(r.Host)
-	s.certs.Issue(in.Domain, true)
+	if err := s.certs.Issue(in.Domain, true); err != nil {
+		msg := s.certs.ListenError()
+		if msg == "" {
+			msg = "turn on automatic HTTPS first"
+		}
+		writeErr(w, http.StatusConflict, msg)
+		return
+	}
 	writeJSON(w, map[string]any{"ok": true})
+}
+
+// httpsRedirect sends a browser that opened a domain over plain HTTP (for
+// example status.example.com:7788) to its HTTPS address, without a port, once
+// there is a certificate. API calls are left alone: agents, push scripts and
+// scrapers keep working on any address.
+func (s *Server) httpsRedirect(w http.ResponseWriter, r *http.Request) bool {
+	if s.certs == nil || r.TLS != nil || (r.Method != http.MethodGet && r.Method != http.MethodHead) {
+		return false
+	}
+	if strings.HasPrefix(r.URL.Path, "/api/") || strings.HasPrefix(r.URL.Path, "/.well-known/") || r.URL.Path == "/metrics" {
+		return false
+	}
+	host := certs.HostOnly(r.Host)
+	if net.ParseIP(host) != nil || s.secureRequest(r) || !s.certs.Secure(host) {
+		return false
+	}
+	http.Redirect(w, r, s.certs.HTTPSURL(host)+r.URL.RequestURI(), http.StatusMovedPermanently)
+	return true
 }
 
 // applyHTTPS reloads the domain table and lets the HTTPS listeners follow.

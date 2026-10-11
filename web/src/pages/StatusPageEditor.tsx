@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import { ArrowDown, ArrowLeft, ArrowUp, Cable, CircleCheck, CircleDashed, ExternalLink, Eye, EyeOff, Globe, ImageUp, LockKeyhole, Megaphone, Plus, Save, Server, Trash2, TriangleAlert, X } from 'lucide-react'
 import { api, uploadImage } from '../lib/api'
@@ -7,7 +7,7 @@ import { clsx, fmtDate, fmtDateTime } from '../lib/format'
 import { useT } from '../lib/i18n'
 import type { HttpsStatus, Incident, StatusPage, Theme } from '../lib/types'
 import { Alert, Badge, Card, CopyButton, Field, IconButton, Input, Segmented, Select, Skeleton, Spinner, Switch, Textarea, Button, confirm, toast } from '../components/ui'
-import { ThemeSwatch, pageURL, slugify, themeMeta } from './StatusPages'
+import { ThemeSwatch, domainURL, pageURL, slugify, themeMeta } from './StatusPages'
 import { TypeIcon } from '../components/meta'
 import { Flag } from '../components/flag'
 import { monitorCountry } from './Dashboard'
@@ -49,7 +49,31 @@ function LogoField({ value, onChange }: { value: string; onChange: (v: string) =
 function DomainState({ domain, https, onRefresh }: { domain: string; https: HttpsStatus | null | undefined; onRefresh: () => void }) {
   const t = useT()
   const role = useApp((s) => s.role)
+  const [busy, setBusy] = useState(false)
+  const [err, setErr] = useState('')
+  const d0 = https?.domains.find((x) => x.domain === domain)
+  // While a certificate is on its way, keep checking.
+  useEffect(() => {
+    if (!busy && !d0?.issuing) return
+    const h = setInterval(onRefresh, 3000)
+    return () => clearInterval(h)
+  }, [busy, d0?.issuing, onRefresh])
+  useEffect(() => {
+    if (busy && (d0?.issued || (d0?.error && !d0.issuing))) setBusy(false)
+  }, [busy, d0?.issued, d0?.error, d0?.issuing])
   if (!domain) return null
+  const getSSL = async () => {
+    setErr('')
+    setBusy(true)
+    try {
+      await api.post('/api/https/issue', { domain, enable: true })
+      toast.info(t('Requesting a certificate for {d}…', { d: domain }))
+      setTimeout(onRefresh, 1500)
+    } catch (e) {
+      setErr((e as Error).message)
+      setBusy(false)
+    }
+  }
   if (https === undefined) return <div className="flex items-center gap-2 text-[13px] text-muted"><Spinner className="size-3.5" />{t('Checking the domain…')}</div>
   const d = https?.domains.find((x) => x.domain === domain)
   const ip = https?.serverIps[0] ?? t('this server’s IP')
@@ -71,11 +95,26 @@ function DomainState({ domain, https, onRefresh }: { domain: string; https: Http
           </span>
         </div>
       )}
-      {d?.error && !d.issued && <p className="text-[12.5px] text-down" dir="auto">{d.error}</p>}
-      {https && !https.enabled && (
-        <p className="text-muted">{t('For HTTPS, turn on automatic certificates in')} {role === 'admin' ? <Link to="/settings/https" className="text-accent-ink hover:underline">{t('Settings → Domains & HTTPS')}</Link> : t('Settings → Domains & HTTPS')}.</p>
+      {/* A DNS problem is already shown above, in the page language. */}
+      {d?.error && d.pointsHere && !d.issued && !busy && <p className="text-[12.5px] text-down" dir="auto">{d.error}</p>}
+      {err && <p className="text-[12.5px] text-down" dir="auto">{err}</p>}
+      <div className="flex flex-wrap items-center gap-2 pt-0.5">
+        {role === 'admin' && !d?.issued && (
+          <Button type="button" size="sm" variant="primary" loading={busy || d?.issuing} icon={<LockKeyhole className="size-3.5" />} onClick={getSSL}>
+            {d?.pointsHere || !d ? t('Get SSL now') : t('Get SSL anyway')}
+          </Button>
+        )}
+        {d?.issued && https?.running && (
+          <a href={domainURL(domain, https)} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1.5 text-[12.5px] text-accent-ink hover:underline" dir="ltr">
+            <ExternalLink className="size-3.5" />{domainURL(domain, https).replace(/^https:\/\//, '')}
+          </a>
+        )}
+        <button type="button" onClick={onRefresh} className="text-[12.5px] text-muted hover:text-fg hover:underline">{t('Check again')}</button>
+      </div>
+      {role === 'admin' && !d?.issued && !d?.pointsHere && d && (
+        <p className="text-[12px] text-muted">{t('Let’s Encrypt can only issue once the A record points here; a failed try is allowed a few times an hour.')}</p>
       )}
-      <button type="button" onClick={onRefresh} className="text-[12.5px] text-accent-ink hover:underline">{t('Check again')}</button>
+      {role !== 'admin' && https && !https.enabled && <p className="text-muted">{t('An admin can turn on HTTPS for this domain.')}</p>}
     </div>
   )
 }
@@ -157,10 +196,10 @@ export default function StatusPageEditor() {
   const [entry, setEntry] = useState('')
   const [https, setHttps] = useState<HttpsStatus | null | undefined>(undefined)
   const frame = useRef<HTMLIFrameElement>(null)
-  const loadHttps = () => {
+  const loadHttps = useCallback(() => {
     if (role !== 'admin') return setHttps(null)
     api.get<HttpsStatus>('/api/https').then(setHttps).catch(() => setHttps(null))
-  }
+  }, [role])
 
   useEffect(() => {
     api.get<StatusPage>(`/api/status-pages/${id}`).then((r) => { setP(r); setSavedSlug(r.slug) }).catch((e) => setErr(e.message))

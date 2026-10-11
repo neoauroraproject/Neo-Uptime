@@ -196,6 +196,9 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		h.Set("Content-Security-Policy", csp+"; frame-ancestors 'none'")
 		h.Set("X-Frame-Options", "DENY")
 	}
+	if s.httpsRedirect(w, r) {
+		return
+	}
 	if pg, ok := s.hosts.page(certs.HostOnly(r.Host)); ok {
 		s.serveStatusHost(w, r, pg)
 		return

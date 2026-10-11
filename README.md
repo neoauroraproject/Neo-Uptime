@@ -170,10 +170,12 @@ Each page is served at `/status/<slug>`. Any one of them can also be shown at th
 ## A status page on its own domain, with HTTPS
 
 1. At your DNS provider, add an **A record** for the name (for example `status.example.com`) pointing to this server's IP. With Cloudflare, use *DNS only* (grey cloud).
-2. In the status page editor, enter it under **Own domain**. The editor shows whether DNS points here yet.
-3. Under **Settings → Domains & HTTPS**, turn on **Get certificates automatically**. Neo Uptime then also listens on ports 80 and 443, gets a free Let's Encrypt certificate for every domain as soon as its DNS points here, and renews it on its own. You can give the admin panel its own domain there too.
+2. In the status page editor, enter it under **Own domain** and save. The editor shows whether DNS points here yet.
+3. Click **Get SSL now** right there. It turns on automatic HTTPS if it is off: Neo Uptime then also listens on ports 80 and 443, gets a free Let's Encrypt certificate and renews it on its own. Later domains get theirs as soon as their DNS points here.
 
-Visitors to the status domain see only that page — the admin panel, the sign-in page and the admin API are not reachable through it.
+The page then opens at `https://status.example.com` — no port. Opening the domain over plain HTTP, or on the panel's port (`:7788`), redirects there. Visitors to the status domain see only that page — the admin panel, the sign-in page and the admin API are not reachable through it.
+
+To drop the port from the admin panel too, set a **Panel domain** under **Settings → Domains & HTTPS** (for example `uptime.example.com`), then click **Use https://uptime.example.com** to make it the public address used in alert links, push URLs and agent commands.
 
 <img src="docs/screenshots/editor-domain.jpg" alt="Status page editor: logo upload, own domain and HTTPS status" />
 
@@ -350,9 +352,11 @@ bash <(curl -fsSL https://raw.githubusercontent.com/neoauroraproject/Neo-Uptime/
 
 ۲. در ویرایشگر صفحه‌ی وضعیت، دامنه را در **دامنه‌ی اختصاصی** وارد کنید. همانجا لوگو را هم آپلود کنید.
 
-۳. در **تنظیمات ← دامنه‌ها و HTTPS** گزینه‌ی **دریافت خودکار گواهی SSL** را روشن کنید. Neo Uptime روی پورت‌های ۸۰ و ۴۴۳ هم گوش می‌دهد، به محض اینکه DNS به سرور اشاره کند گواهی رایگان Let’s Encrypt می‌گیرد و خودش تمدیدش می‌کند. برای خود پنل مدیریت هم می‌توانید دامنه بگذارید.
+۳. همانجا روی **دریافت فوری SSL** بزنید. اگر HTTPS خاموش باشد روشنش می‌کند، Neo Uptime روی پورت‌های ۸۰ و ۴۴۳ هم گوش می‌دهد، گواهی رایگان Let’s Encrypt می‌گیرد و خودش تمدیدش می‌کند.
 
-روی دامنه‌ی صفحه‌ی وضعیت فقط همان صفحه دیده می‌شود؛ پنل مدیریت و صفحه‌ی ورود از آن دامنه در دسترس نیستند.
+صفحه از آن به بعد روی `https://status.example.com` و **بدون پورت** باز می‌شود؛ اگر کسی دامنه را با HTTP یا با پورت پنل (`:7788`) باز کند، به همین آدرس منتقل می‌شود. روی دامنه‌ی صفحه‌ی وضعیت فقط همان صفحه دیده می‌شود؛ پنل مدیریت و صفحه‌ی ورود از آن دامنه در دسترس نیستند.
+
+برای اینکه خود پنل مدیریت هم بدون پورت باز شود، در **تنظیمات ← دامنه‌ها و HTTPS** یک **دامنه‌ی پنل** (مثلاً `uptime.example.com`) بگذارید و بعد روی دکمه‌ی «استفاده از https://uptime.example.com» بزنید تا آدرس عمومی پنل شود.
 
 ### صفحه‌ی وضعیت و API خصوصی
 
