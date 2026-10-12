@@ -74,11 +74,9 @@ ask() { # prompt default -> answer
   read -r ans </dev/tty || true
   printf '%s' "${ans:-$2}"
 }
-# The project's current announcement (ads.json in the repository).
+# The current ad from Neo Aurora's ad service.
 show_ad() {
-  local lang=en
-  case "${LANG:-}" in fa*) lang=fa ;; esac
-  [ -x "$BIN" ] && timeout 6 "$BIN" ad "$lang" 2>/dev/null || true
+  [ -x "$BIN" ] && timeout 6 "$BIN" ad 2>/dev/null || true
 }
 if [ "$UNINSTALL" -eq 0 ] && [ -z "$SERVER$TOKEN" ] && [ -x "$BIN" ] && [ -f "$ENV_FILE" ] && interactive; then
   cur_server="$(grep -E '^NEO_AGENT_SERVER=' "$ENV_FILE" | cut -d= -f2-)"

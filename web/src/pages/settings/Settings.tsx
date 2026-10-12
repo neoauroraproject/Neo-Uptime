@@ -9,6 +9,7 @@ import Security from './Security'
 import StatusAPI from './StatusAPI'
 import HTTPS from './HTTPS'
 import { About, ApiKeys, Backup, Tags, UsersSettings } from './Admin'
+import { AdCard } from '../../components/AdCard'
 
 const sections = [
   { id: 'general', label: 'General', icon: Settings2, admin: true, el: <General /> },
@@ -36,6 +37,7 @@ export default function Settings() {
   return (
     <div className="p-4 sm:p-6 lg:p-8 max-w-[1200px]">
       <h1 className="font-display text-[28px] font-semibold tracking-tight">{t('Settings')}</h1>
+      <AdCard className="mt-6" />
       <div className="mt-6 grid md:grid-cols-[230px_minmax(0,1fr)] gap-6 items-start">
         <nav aria-label={t('Settings')} className="flex md:flex-col gap-1 overflow-x-auto md:overflow-visible -mx-4 px-4 md:mx-0 md:px-0 pb-1 md:sticky md:top-6">
           {visible.map((s) => (

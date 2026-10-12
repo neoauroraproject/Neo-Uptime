@@ -54,7 +54,7 @@ Usage:
   neo-uptime disable-2fa <user>
   neo-uptime list-users
   neo-uptime set-owner <user>          make an admin the owner (who alone issues status API keys)
-  neo-uptime ad [fa|en]                show the current announcement (used by the install script)
+  neo-uptime ad                        show the current ad (used by the install script)
   neo-uptime version
 
 Flags (or environment):
@@ -98,11 +98,7 @@ func main() {
 	case "set-owner":
 		setOwner(*data, rest)
 	case "ad":
-		lang := "en"
-		if len(rest) > 0 {
-			lang = rest[0]
-		}
-		ads.Print(os.Stdout, lang, isTerminal())
+		ads.Print(os.Stdout, isTerminal())
 	case "help", "-h", "--help":
 		usage()
 	default:

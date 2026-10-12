@@ -9,6 +9,7 @@ import type { BackpackPanel, PanelSnapshot } from '../lib/types'
 import { Alert, Badge, Button, Card, Checkbox, Empty, Field, IconButton, Input, Menu, Modal, Segmented, Select, Skeleton, Switch, confirm, toast, useNow } from '../components/ui'
 import { TunnelBadges, TunnelCard } from '../components/tunnel'
 import { TunnelSlowAlertsDialog } from '../components/SlowAlert'
+import { AdCard } from '../components/AdCard'
 
 /* ---------- panel dialog ---------- */
 
@@ -328,6 +329,7 @@ export default function Tunnels({ tab = 'tunnels' }: { tab?: 'tunnels' | 'panels
         </div>
       </div>
       <TunnelSlowAlertsDialog open={slowOpen} onClose={() => setSlowOpen(false)} ids={list.map((m) => m.id)} />
+      <AdCard />
 
       {tab === 'panels' ? <Panels /> : (
         <>

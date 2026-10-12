@@ -9,7 +9,7 @@ The [README](../README.md) covers everyday use. This page is for scripting, reve
 - [Push monitors](#push-monitors-uptime-kuma-compatible)
 - [Own domains and HTTPS](#own-domains-and-https)
 - [Status API and widget](#status-api-and-widget)
-- [Announcements feed](#announcements-feed)
+- [Ads](#ads)
 - [Configuration](#configuration)
 - [Command line](#command-line)
 - [Admin API](#admin-api)
@@ -125,9 +125,9 @@ curl -H "Authorization: Bearer sk_…" https://uptime.example.com/api/v1/status/
 
 `overall` is `operational`, `partial_outage`, `major_outage`, `maintenance` or `unknown`; a monitor's `status` is `up`, `down`, `pending`, `maintenance`, `paused` or `unknown`.
 
-## Announcements feed
+## Ads
 
-The panel shows a short text announcement on the dashboard and in the side menu, and the install scripts print one. They come from [`ads.json`](../ads.json) in this repository, read every few hours from GitHub (with a jsDelivr copy as a fallback). Nothing is sent along: it is a plain download of a public file. `NEO_UPTIME_ADS_URL` points it at another address (comma-separated list). How to write the file: [docs/ads.md](ads.md).
+The panel shows a text ad at the top of its pages, and the install scripts print one. They come from Neo Aurora's ad service — `GET https://license.hossein-m466.workers.dev/v1/ads?product=neo-uptime` — read every half hour; the last answer is kept for when the service is out of reach. Only the product name is sent. `NEO_UPTIME_ADS_URL` points it elsewhere (comma-separated list). See [docs/ads.md](ads.md).
 
 ## Configuration
 

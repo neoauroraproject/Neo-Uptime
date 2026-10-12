@@ -10,7 +10,7 @@ import { useLang, useT, type Lang } from '../lib/i18n'
 import { Button, Menu } from './ui'
 import { Logo } from './meta'
 import { ProjectLinks } from './brand'
-import { AdCard } from './AdCard'
+import { ChannelCard } from './AdCard'
 
 const nav = [
   { to: '/dashboard', label: 'Dashboard', icon: LayoutDashboard },
@@ -158,7 +158,7 @@ export default function Shell() {
         ))}
       </nav>
       <div className="mt-auto p-4 space-y-3">
-        <AdCard placement="sidebar" />
+        <ChannelCard />
         <div className="rounded-2xl border border-line bg-surface-2/60 p-3 space-y-2.5">
           <div className="flex items-center justify-between">
             <span className="text-[12px] uppercase tracking-wider text-subtle font-semibold">{t('Live')}</span>

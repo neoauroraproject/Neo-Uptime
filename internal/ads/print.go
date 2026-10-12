@@ -10,21 +10,16 @@ import (
 	"unicode/utf8"
 )
 
-// Print writes the current install-time ad for a terminal, as the install
-// and update scripts show it. It gives up after a few seconds and prints
-// nothing when there is no ad.
-func Print(w io.Writer, lang string, color bool) {
+// Print writes an ad for a terminal, as the install and update scripts show
+// it. It gives up after a few seconds and prints nothing when there is no ad.
+func Print(w io.Writer, color bool) {
 	ctx, cancel := context.WithTimeout(context.Background(), 4*time.Second)
 	defer cancel()
 	f, _, err := Fetch(ctx, &http.Client{}, SourcesFromEnv())
 	if err != nil {
 		return
 	}
-	live := f.Live(time.Now())
-	a := Pick(live, PlaceInstall, lang)
-	if a == nil && lang != "en" {
-		a = Pick(live, PlaceInstall, "en")
-	}
+	a := Pick(f.Ads)
 	if a == nil {
 		return
 	}

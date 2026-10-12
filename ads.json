@@ -1,26 +1,16 @@
 {
   "ads": [
     {
-      "id": "neoaurora-channel-fa",
-      "lang": "fa",
-      "placements": ["dashboard", "sidebar", "install"],
-      "badge": "اطلاعیه",
-      "title": "کانال تلگرام نئو آرورا",
-      "text": "نسخه‌های جدید Neo Uptime، آموزش‌ها و پیشنهادهای ویژه را زودتر از همه ببینید.",
-      "button": "عضویت در کانال",
-      "url": "https://t.me/neoaurora",
-      "color": "#22c55e"
-    },
-    {
-      "id": "neoaurora-channel-en",
-      "lang": "en",
-      "placements": ["dashboard", "sidebar", "install"],
-      "badge": "News",
-      "title": "Neo Aurora on Telegram",
-      "text": "New Neo Uptime releases, guides and special offers — first on the channel.",
-      "button": "Join the channel",
-      "url": "https://t.me/neoaurora",
-      "color": "#22c55e"
+      "id": "neo-ads-default",
+      "placements": [
+        "dashboard",
+        "install"
+      ],
+      "badge": "Ads",
+      "title": "تبلیغات",
+      "text": "برای رزرو تبلیغات دراینجا پیام دهید",
+      "button": "ثبت تبلیغ",
+      "url": "https://t.me/hmraysupport"
     }
   ]
 }

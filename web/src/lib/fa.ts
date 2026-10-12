@@ -1323,4 +1323,9 @@ export const fa: Record<string, string> = {
   '{name} is up to date': '{name} به‌روز است',
   '{name} updated to {v}': '{name} به {v} آپدیت شد',
   '{n} agents updated': '{n} ایجنت آپدیت شد',
+
+  // ---------- channel card ----------
+  'News': 'اطلاعیه',
+  'Join the channel': 'عضویت در کانال',
+  'Neo Aurora Telegram channel': 'کانال تلگرام نئو آرورا',
 }

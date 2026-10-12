@@ -230,18 +230,14 @@ export interface SubPreview {
   via: string
 }
 
-/** A text ad from the project's feed (ads.json). */
+/** A text ad from Neo Aurora's ad service. */
 export interface Ad {
   id: string
-  placements?: string[]
-  lang?: string
   badge?: string
   title: string
   text?: string
   button?: string
   url?: string
-  color?: string
-  weight?: number
 }
 
 export interface Tag { id: number; name: string; color: string; createdAt: number }

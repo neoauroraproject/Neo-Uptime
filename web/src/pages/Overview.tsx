@@ -105,7 +105,7 @@ export default function Overview() {
             }
           />
         </Card>
-        <div className="max-w-3xl mx-auto space-y-5"><AlertsHint /><AdCard placement="dashboard" /></div>
+        <div className="max-w-3xl mx-auto space-y-5"><AlertsHint /><AdCard /></div>
       </div>
     )
   }
@@ -134,7 +134,7 @@ export default function Overview() {
       </div>
 
       <AlertsHint />
-      <AdCard placement="dashboard" />
+      <AdCard />
 
       {offline.length > 0 && (
         <Link to="/servers" className="block rounded-2xl border border-down/30 bg-down/8 px-4 py-3 text-sm text-down hover:bg-down/12 transition-colors">

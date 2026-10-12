@@ -9,6 +9,7 @@ import type { MonitorView, SubPreview, Subscription } from '../lib/types'
 import { Alert, Badge, Button, Card, Checkbox, Empty, Field, IconButton, Input, Menu, Modal, Segmented, Select, Skeleton, Spinner, Switch, confirm, toast, useNow } from '../components/ui'
 import { ConfigCard } from '../components/xray'
 import { Flag } from '../components/flag'
+import { AdCard } from '../components/AdCard'
 
 /* ---------- usage ---------- */
 
@@ -297,6 +298,7 @@ export default function Configs() {
         </div>
         {canEdit(role) && <Button variant="primary" icon={<Plus className="size-4" />} onClick={() => nav('/add?type=xray')}>{t('Add subscription or config')}</Button>}
       </div>
+      <AdCard />
 
       {all.length > 0 && (
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">

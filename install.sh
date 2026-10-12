@@ -98,12 +98,10 @@ ask() { # prompt default → answer
 }
 
 installed() { [ -x "$BIN" ] && [ -f "$UNIT" ]; }
-# The project's current announcement (ads.json in the repository); quiet
-# and quick when there is none or GitHub cannot be reached.
+# The current ad from Neo Aurora's ad service; quiet and quick when there
+# is none or the service cannot be reached.
 show_ad() {
-  local lang=en
-  case "${LANG:-}" in fa*) lang=fa ;; esac
-  [ -x "$BIN" ] && timeout 6 "$BIN" ad "$lang" 2>/dev/null || true
+  [ -x "$BIN" ] && timeout 6 "$BIN" ad 2>/dev/null || true
 }
 current_version() { "$BIN" version 2>/dev/null | awk '{print $2}' || true; }
 current_port() {

@@ -6,6 +6,7 @@ import { canEdit, useApp } from '../lib/store'
 import { useT } from '../lib/i18n'
 import type { HttpsStatus, StatusPage, Theme } from '../lib/types'
 import { Alert, Badge, Button, Card, Empty, Field, Input, Modal, Skeleton, toast } from '../components/ui'
+import { AdCard } from '../components/AdCard'
 
 export const themeMeta: Record<Theme, { name: string; desc: string; swatch: string[] }> = {
   zen: { name: 'Zen', desc: 'Nothing but the status — light or dark with the visitor', swatch: ['#f7f7f4', '#ffffff', '#22c55e'] },
@@ -108,6 +109,7 @@ export default function StatusPages() {
         </div>
         {canEdit(role) && <Button variant="primary" icon={<Plus className="size-4" />} onClick={() => { setOpen(true); setTitle(''); setSlug(''); setSlugTouched(false); setErr('') }}>{t('New status page')}</Button>}
       </div>
+      <AdCard />
 
       {me?.isOwner && (
         <Alert tone="info" title={t('Show your status on your own site')}>

@@ -6,6 +6,7 @@ import { clsx, fmtWeekdayTime, n } from '../lib/format'
 import { t as tr, useT } from '../lib/i18n'
 import type { Maintenance, StatusPage } from '../lib/types'
 import { Alert, Badge, Button, Card, Checkbox, Empty, Field, IconButton, Input, Menu, Modal, Segmented, Select, Skeleton, Textarea, confirm, toast } from '../components/ui'
+import { AdCard } from '../components/AdCard'
 
 const dayKeys = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
 
@@ -175,6 +176,7 @@ export default function MaintenancePage() {
         </div>
         {canEdit(role) && <Button variant="primary" icon={<Plus className="size-4" />} onClick={() => { setEdit(undefined); setOpen(true) }}>{t('Schedule maintenance')}</Button>}
       </div>
+      <AdCard />
       {list === null ? <Skeleton className="h-40 rounded-[18px]" /> : list.length === 0 ? (
         <Card><Empty icon={<Wrench className="size-6" />} title={t('No maintenance planned')} body={t('Schedule a window before you reboot a server or move a tunnel, so nobody gets paged for it.')} /></Card>
       ) : (

@@ -10,6 +10,7 @@ import { Alert, Button, Card, Checkbox, CopyButton, Empty, Field, IconButton, In
 import { CountryPicker, Flag, countryName } from '../components/flag'
 import { SourceBadge } from '../components/meta'
 import { TunnelBadges } from '../components/tunnel'
+import { AdCard } from '../components/AdCard'
 
 function Bar({ value, label }: { value: number; label: string }) {
   const tone = value >= 90 ? 'var(--down)' : value >= 75 ? 'var(--pending)' : 'var(--up)'
@@ -456,6 +457,7 @@ export default function Servers() {
           {role === 'admin' && <Button variant="primary" icon={<Plus className="size-4" />} onClick={() => { setEdit(undefined); setOpen(true) }}>{t('Add a server')}</Button>}
         </div>
       </div>
+      <AdCard />
 
       {agents.length > 0 && (
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">

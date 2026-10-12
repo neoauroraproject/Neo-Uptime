@@ -46,7 +46,7 @@ Usage:
   neo-uptime-agent [run] [flags]   report every interval (default)
   neo-uptime-agent once [flags]    print one report as JSON and exit
   neo-uptime-agent test [flags]    send one report and say whether it was accepted
-  neo-uptime-agent ad [fa|en]      show the current Neo Uptime announcement
+  neo-uptime-agent ad              show the current ad (used by the install script)
   neo-uptime-agent version
 
 Flags (or environment):
@@ -119,12 +119,8 @@ func main() {
 		}
 		fmt.Printf("accepted as %q through %s — %d BackPack and %d Kariz tunnel(s) reported\n", ack.Name, a.Current(), bp, kz)
 	case "ad":
-		lang := "en"
-		if rest := fs.Args(); len(rest) > 0 {
-			lang = rest[0]
-		}
 		fi, err := os.Stdout.Stat()
-		ads.Print(os.Stdout, lang, err == nil && fi.Mode()&os.ModeCharDevice != 0)
+		ads.Print(os.Stdout, err == nil && fi.Mode()&os.ModeCharDevice != 0)
 	case "run":
 		need(cfg)
 		ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)

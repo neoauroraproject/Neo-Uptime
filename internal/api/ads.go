@@ -11,8 +11,10 @@ import (
 // in the settings table, so ads show at once after a restart.
 func (s *Server) StartAds(ctx context.Context) {
 	svc := ads.NewService(ads.SourcesFromEnv(),
-		func() []byte { return []byte(s.db.GetSetting(ctx, "ads.feed", "")) },
-		func(b []byte) { _ = s.db.SetSettings(context.Background(), map[string]string{"ads.feed": string(b)}) })
+		func() []byte { return []byte(s.db.GetSetting(ctx, "ads.service", "")) },
+		func(b []byte) {
+			_ = s.db.SetSettings(context.Background(), map[string]string{"ads.service": string(b)})
+		})
 	s.adsMu.Lock()
 	s.ads = svc
 	s.adsMu.Unlock()
