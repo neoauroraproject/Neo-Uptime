@@ -250,87 +250,26 @@ html[lang="fa"] .font-display { letter-spacing: 0; }
 }
 
 /* ---------- base ---------- */
-html {
-  -webkit-text-size-adjust: 100%;
-  text-rendering: optimizeLegibility;
-}
-body {
-  margin: 0;
-  background: var(--bg);
-  color: var(--text);
-  font-family: var(--font-sans);
-  font-size: 14px;
-  line-height: 1.5;
-  -webkit-font-smoothing: antialiased;
-  -moz-osx-font-smoothing: grayscale;
-}
-.app-bg {
-  background:
-    radial-gradient(1200px 600px at 75% -10%, var(--glow), transparent 60%),
-    radial-gradient(800px 500px at -10% 110%, var(--glow), transparent 60%),
-    var(--bg);
-}
-::selection {
-  background: var(--accent);
-  color: var(--on-accent);
-}
-:focus-visible {
-  outline: 2px solid var(--accent);
-  outline-offset: 2px;
-  border-radius: 6px;
-}
-input, select, textarea, button { font: inherit; color: inherit; }
-button { cursor: pointer; }
-button:disabled { cursor: not-allowed; }
-.tnum { font-variant-numeric: tabular-nums; }
-.font-display { letter-spacing: -0.02em; }
-
-/* thin scrollbars that match the surface */
-* { scrollbar-width: thin; scrollbar-color: var(--border-strong) transparent; }
-*::-webkit-scrollbar { width: 10px; height: 10px; }
-*::-webkit-scrollbar-thumb { background: var(--border-strong); border-radius: 10px; border: 3px solid transparent; background-clip: content-box; }
-
-/* card with dotted grid like the BackPack monitor cards */
-.dot-grid {
-  background-image: radial-gradient(color-mix(in srgb, var(--text) 9%, transparent) 1px, transparent 1px);
-  background-size: 16px 16px;
-}
-
-.card {
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: 18px;
-  box-shadow: var(--shadow-card);
-}
 
 @keyframes pulse-ring {
   0% { box-shadow: 0 0 0 0 color-mix(in srgb, currentColor 55%, transparent); }
   70% { box-shadow: 0 0 0 7px transparent; }
   100% { box-shadow: 0 0 0 0 transparent; }
 }
-.live-dot { animation: pulse-ring 2s cubic-bezier(.4,0,.6,1) infinite; }
 
 @keyframes beat-in {
   from { transform: scaleY(0.3); opacity: 0; }
   to { transform: scaleY(1); opacity: 1; }
 }
-.beat-new { animation: beat-in 260ms cubic-bezier(.2,.8,.2,1) both; transform-origin: bottom; }
 
 @keyframes fade-up {
   from { opacity: 0; transform: translateY(6px); }
   to { opacity: 1; transform: none; }
 }
-.fade-up { animation: fade-up 240ms cubic-bezier(.2,.8,.2,1) both; }
 
 @keyframes shimmer {
   from { background-position: -400px 0; }
   to { background-position: 400px 0; }
-}
-.skeleton {
-  background: linear-gradient(90deg, var(--surface-2) 0, var(--surface-3) 40%, var(--surface-2) 80%);
-  background-size: 800px 100%;
-  animation: shimmer 1.4s linear infinite;
-  border-radius: 8px;
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -349,7 +288,45 @@ button:disabled { cursor: not-allowed; }
   unicode-bidi: plaintext;
 }
 
+/* Global rules sit in layers so that utilities on an element always win:
+   an unlayered rule beats every layered one, whatever its specificity. */
 @layer base {
+  html {
+    -webkit-text-size-adjust: 100%;
+    text-rendering: optimizeLegibility;
+  }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--text);
+    font-family: var(--font-sans);
+    font-size: 14px;
+    line-height: 1.5;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+  ::selection {
+    background: var(--accent);
+    color: var(--on-accent);
+  }
+  :focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
+    border-radius: 6px;
+  }
+  /* thin scrollbars that match the surface */
+  * { scrollbar-width: thin; scrollbar-color: var(--border-strong) transparent; }
+  *::-webkit-scrollbar { width: 10px; height: 10px; }
+  *::-webkit-scrollbar-thumb { background: var(--border-strong); border-radius: 10px; border: 3px solid transparent; background-clip: content-box; }
+
+  /* Form controls take the page's font and colour. In this layer, so that a
+     colour utility on a button (text-on-accent, text-muted, …) still wins:
+     unlayered, "color: inherit" overrode them all, which left light text on
+     the lime buttons in the dark theme. */
+  input, select, textarea, button { font: inherit; color: inherit; }
+  button { cursor: pointer; }
+  button:disabled { cursor: not-allowed; }
+
   /* User-written text (names, titles) keeps its own reading order with
      dir="auto" but lines up with the page, not with its own direction.
      Single-line truncated text shrinks to its content instead: right-aligning an
@@ -363,5 +340,36 @@ button:disabled { cursor: not-allowed; }
   :where(html[dir] [dir='auto'].truncate, html[dir='rtl'] [dir='ltr'].truncate) {
     width: fit-content;
     max-width: 100%;
+  }
+}
+
+@layer components {
+  .app-bg {
+    background:
+      radial-gradient(1200px 600px at 75% -10%, var(--glow), transparent 60%),
+      radial-gradient(800px 500px at -10% 110%, var(--glow), transparent 60%),
+      var(--bg);
+  }
+  .tnum { font-variant-numeric: tabular-nums; }
+  .font-display { letter-spacing: -0.02em; }
+  /* card with dotted grid like the BackPack monitor cards */
+  .dot-grid {
+    background-image: radial-gradient(color-mix(in srgb, var(--text) 9%, transparent) 1px, transparent 1px);
+    background-size: 16px 16px;
+  }
+  .card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 18px;
+    box-shadow: var(--shadow-card);
+  }
+  .live-dot { animation: pulse-ring 2s cubic-bezier(.4,0,.6,1) infinite; }
+  .beat-new { animation: beat-in 260ms cubic-bezier(.2,.8,.2,1) both; transform-origin: bottom; }
+  .fade-up { animation: fade-up 240ms cubic-bezier(.2,.8,.2,1) both; }
+  .skeleton {
+    background: linear-gradient(90deg, var(--surface-2) 0, var(--surface-3) 40%, var(--surface-2) 80%);
+    background-size: 800px 100%;
+    animation: shimmer 1.4s linear infinite;
+    border-radius: 8px;
   }
 }

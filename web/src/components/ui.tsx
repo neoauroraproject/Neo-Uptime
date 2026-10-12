@@ -358,17 +358,23 @@ export function Modal({ open, onClose, title, description, children, footer, siz
 }) {
   const ref = useRef<HTMLDivElement>(null)
   const titleId = useId()
+  // Callers pass a new onClose on every render. Keeping it out of the
+  // effect below means focus is set once, when the dialog opens: re-running
+  // it moved focus away and back on each render, which on phones closes the
+  // keyboard after every key typed.
+  const close = useRef(onClose)
+  close.current = onClose
   useEffect(() => {
     if (!open) return
     const prev = document.activeElement as HTMLElement | null
     const el = ref.current
     const focusables = () => Array.from(el?.querySelectorAll<HTMLElement>('button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])') ?? []).filter((x) => !x.hasAttribute('disabled'))
     const first = el?.querySelector<HTMLElement>('[data-autofocus]') ?? focusables()[1] ?? focusables()[0]
-    setTimeout(() => first?.focus(), 20)
+    const timer = setTimeout(() => first?.focus(), 20)
     const onKey = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
         e.stopPropagation()
-        onClose()
+        close.current()
       }
       if (e.key === 'Tab') {
         const f = focusables()
@@ -382,11 +388,12 @@ export function Modal({ open, onClose, title, description, children, footer, siz
     const overflow = document.body.style.overflow
     document.body.style.overflow = 'hidden'
     return () => {
+      clearTimeout(timer)
       document.removeEventListener('keydown', onKey)
       document.body.style.overflow = overflow
       prev?.focus?.()
     }
-  }, [open, onClose])
+  }, [open])
   if (!open) return null
   const widths = { sm: 'max-w-md', md: 'max-w-xl', lg: 'max-w-3xl', xl: 'max-w-5xl' }
   return createPortal(
