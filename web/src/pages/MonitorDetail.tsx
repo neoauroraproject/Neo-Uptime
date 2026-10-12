@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
-import { Cable, Copy, Cpu, Ellipsis, Eraser, ExternalLink, Layers, LockKeyhole, Pause, Pencil, Play, RefreshCw, Server, Trash2, Webhook } from 'lucide-react'
+import { Cable, Copy, Cpu, Ellipsis, Eraser, ExternalLink, Layers, LockKeyhole, Pause, Pencil, Play, RefreshCw, Rocket, Server, Trash2, Webhook } from 'lucide-react'
 import { api } from '../lib/api'
 import { canEdit, useApp } from '../lib/store'
 import { clsx, duration, fmtDate, fmtDateTime, ms, n, pct, timeAgo } from '../lib/format'
@@ -9,6 +9,7 @@ import type { ChartPoint, Heartbeat, UptimeStat } from '../lib/types'
 import { Badge, Button, Card, CardHeader, CopyButton, Empty, IconButton, Menu, Pagination, Segmented, Skeleton, StatusPill, TagChip, confirm, toast, useNow } from '../components/ui'
 import { AreaChart, HeartbeatBar, beatsToPoints } from '../components/charts'
 import { AgentPanel, SystemPanel, TunnelDetails } from '../components/tunnel'
+import { XrayDetails } from '../components/xray'
 import { TypeIcon, TypeLabel } from '../components/meta'
 import { Flag, countryName } from '../components/flag'
 import { monitorCountry, monitorState } from './Dashboard'
@@ -263,6 +264,13 @@ export default function MonitorDetail() {
         <Card>
           <CardHeader title={t('Tunnel')} subtitle={via ? t('As reported by {name}', { name: via }) : undefined} icon={<Cable className="size-4" />} />
           <div className="px-5 pb-5"><TunnelDetails t={m.tunnel} /></div>
+        </Card>
+      )}
+
+      {m.type === 'xray' && m.xray && (
+        <Card>
+          <CardHeader title={t('V2Ray config')} subtitle={m.config.gone ? t('Removed from the subscription — paused') : undefined} icon={<Rocket className="size-4" />} />
+          <div className="px-5 pb-5"><XrayDetails m={m} /></div>
         </Card>
       )}
 

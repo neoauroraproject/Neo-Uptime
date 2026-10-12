@@ -20,6 +20,7 @@ import (
 	"time"
 	_ "time/tzdata" // maintenance windows need zones even on minimal hosts
 
+	"github.com/neoauroraproject/Neo-Uptime/internal/ads"
 	"github.com/neoauroraproject/Neo-Uptime/internal/api"
 	"github.com/neoauroraproject/Neo-Uptime/internal/auth"
 	"github.com/neoauroraproject/Neo-Uptime/internal/backpack"
@@ -53,6 +54,7 @@ Usage:
   neo-uptime disable-2fa <user>
   neo-uptime list-users
   neo-uptime set-owner <user>          make an admin the owner (who alone issues status API keys)
+  neo-uptime ad [fa|en]                show the current announcement (used by the install script)
   neo-uptime version
 
 Flags (or environment):
@@ -95,12 +97,23 @@ func main() {
 		listUsers(*data)
 	case "set-owner":
 		setOwner(*data, rest)
+	case "ad":
+		lang := "en"
+		if len(rest) > 0 {
+			lang = rest[0]
+		}
+		ads.Print(os.Stdout, lang, isTerminal())
 	case "help", "-h", "--help":
 		usage()
 	default:
 		usage()
 		os.Exit(2)
 	}
+}
+
+func isTerminal() bool {
+	fi, err := os.Stdout.Stat()
+	return err == nil && fi.Mode()&os.ModeCharDevice != 0
 }
 
 func atoi(s string, def int) int {
@@ -135,6 +148,7 @@ func serve(host string, port int, dataDir, certFile, keyFile string) {
 	}
 	app := api.New(db, mgr, bp, agents, hub, web.FS(), dataDir)
 	app.SetPanelPort(port)
+	app.StartAds(ctx)
 	addr := net.JoinHostPort(host, strconv.Itoa(port))
 	// Automatic HTTPS for the panel's and status pages' own domains. It stays
 	// off until it is turned on under Settings → Domains & HTTPS.

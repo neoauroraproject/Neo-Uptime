@@ -9,6 +9,7 @@ import type { Heartbeat } from '../lib/types'
 import { Button, Card, CardHeader, Empty, Pagination, Skeleton, StatusPill, useNow } from '../components/ui'
 import { Flag } from '../components/flag'
 import { monitorCountry, monitorState } from './Dashboard'
+import { AdCard } from '../components/AdCard'
 
 function Kpi({ label, value, tone, icon, sub }: { label: string; value: number | string; tone: string; icon: React.ReactNode; sub?: string }) {
   return (
@@ -104,7 +105,7 @@ export default function Overview() {
             }
           />
         </Card>
-        <div className="max-w-3xl mx-auto"><AlertsHint /></div>
+        <div className="max-w-3xl mx-auto space-y-5"><AlertsHint /><AdCard placement="dashboard" /></div>
       </div>
     )
   }
@@ -133,6 +134,7 @@ export default function Overview() {
       </div>
 
       <AlertsHint />
+      <AdCard placement="dashboard" />
 
       {offline.length > 0 && (
         <Link to="/servers" className="block rounded-2xl border border-down/30 bg-down/8 px-4 py-3 text-sm text-down hover:bg-down/12 transition-colors">

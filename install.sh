@@ -98,6 +98,13 @@ ask() { # prompt default → answer
 }
 
 installed() { [ -x "$BIN" ] && [ -f "$UNIT" ]; }
+# The project's current announcement (ads.json in the repository); quiet
+# and quick when there is none or GitHub cannot be reached.
+show_ad() {
+  local lang=en
+  case "${LANG:-}" in fa*) lang=fa ;; esac
+  [ -x "$BIN" ] && timeout 6 "$BIN" ad "$lang" 2>/dev/null || true
+}
 current_version() { "$BIN" version 2>/dev/null | awk '{print $2}' || true; }
 current_port() {
   local p=""
@@ -272,6 +279,7 @@ EOF
   if [ -z "$current" ]; then
     printf '  The first visit asks you to create the owner account.\n\n'
   fi
+  show_ad
 }
 
 do_port() {
@@ -341,7 +349,8 @@ menu() {
   version="$(current_version)"
   port="$(current_port)"
   if systemctl is-active --quiet neo-uptime; then state="${c_green}running${c_off}"; else state="${c_red}stopped${c_off}"; fi
-  printf '  Neo Uptime %s%s%s · port %s · %s\n\n' "$c_bold" "${version:-?}" "$c_off" "$port" "$state"
+  printf '  Neo Uptime %s%s%s · port %s · %s\n' "$c_bold" "${version:-?}" "$c_off" "$port" "$state"
+  show_ad
   cat <<EOF
   1) Update to the latest version
   2) Change the port

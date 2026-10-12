@@ -37,6 +37,11 @@ export function useLiveEvents() {
       agentTimer = setTimeout(() => useApp.getState().loadAgents().catch(() => {}), 1500)
     })
     es.addEventListener('maintenance', reload)
+    let subTimer: ReturnType<typeof setTimeout> | undefined
+    es.addEventListener('subscriptions', () => {
+      clearTimeout(subTimer)
+      subTimer = setTimeout(() => useApp.getState().loadSubscriptions().catch(() => {}), 500)
+    })
     es.addEventListener('notification-error', (e) => {
       try {
         const d = JSON.parse((e as MessageEvent).data)

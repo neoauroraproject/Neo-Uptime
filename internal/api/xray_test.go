@@ -1,0 +1,223 @@
+package api
+
+import (
+	"bytes"
+	"context"
+	"encoding/base64"
+	"encoding/json"
+	"fmt"
+	"io"
+	"net"
+	"net/http"
+	"net/http/httptest"
+	"strings"
+	"sync"
+	"testing"
+	"time"
+
+	"github.com/xtls/xray-core/core"
+	"github.com/xtls/xray-core/infra/conf/serial"
+	_ "github.com/xtls/xray-core/proxy/vless/inbound"
+
+	"github.com/neoauroraproject/Neo-Uptime/internal/agent"
+)
+
+const testUUID = "b831381d-6324-4d53-ad4f-8cda48b30811"
+
+// vlessServer runs a real Xray VLESS server on localhost.
+func vlessServer(t *testing.T) int {
+	t.Helper()
+	l, _ := net.Listen("tcp", "127.0.0.1:0")
+	port := l.Addr().(*net.TCPAddr).Port
+	l.Close()
+	body, _ := json.Marshal(map[string]any{
+		"log": map[string]any{"loglevel": "none"},
+		"inbounds": []any{map[string]any{"listen": "127.0.0.1", "port": port, "protocol": "vless",
+			"settings": map[string]any{"clients": []any{map[string]any{"id": testUUID}}, "decryption": "none"}}},
+		"outbounds": []any{map[string]any{"protocol": "freedom"}},
+	})
+	jc, err := serial.DecodeJSONConfig(bytes.NewReader(body))
+	if err != nil {
+		t.Fatal(err)
+	}
+	cfg, err := jc.Build()
+	if err != nil {
+		t.Fatal(err)
+	}
+	inst, err := core.New(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := inst.Start(); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { inst.Close() })
+	return port
+}
+
+func (h *harness) long(method, path, body string) (int, map[string]any) {
+	h.t.Helper()
+	c := &http.Client{Jar: h.client.Jar, Timeout: 90 * time.Second}
+	req, _ := http.NewRequest(method, h.srv.URL+path, strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("X-Neo-Request", "1")
+	resp, err := c.Do(req)
+	if err != nil {
+		h.t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	data, _ := io.ReadAll(resp.Body)
+	var out map[string]any
+	_ = json.Unmarshal(data, &out)
+	return resp.StatusCode, out
+}
+
+// waitStatus waits for a monitor's latest heartbeat to have the status.
+func (h *harness) waitStatus(id int, status int, within time.Duration) map[string]any {
+	h.t.Helper()
+	deadline := time.Now().Add(within)
+	var last map[string]any
+	for time.Now().Before(deadline) {
+		_, m := h.do("GET", fmt.Sprintf("/api/monitors/%d", id), "", false)
+		if hb, ok := m["last"].(map[string]any); ok {
+			last = hb
+			if hb["status"] == float64(status) {
+				return m
+			}
+		}
+		time.Sleep(200 * time.Millisecond)
+	}
+	h.t.Fatalf("monitor %d: no status %d within %s, last %v", id, status, within, last)
+	return nil
+}
+
+// A subscription: its configs become monitors tested through a real Xray
+// core, first on the panel, then on a server running neo-uptime-agent.
+func TestSubscriptionsAndAgentTests(t *testing.T) {
+	h := newHarness(t)
+	h.do("POST", "/api/auth/setup", `{"username":"admin","password":"long-enough-pw"}`, true)
+	target := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(204) }))
+	defer target.Close()
+	port := vlessServer(t)
+
+	good := fmt.Sprintf("vless://%s@127.0.0.1:%d?type=tcp&security=none#%%F0%%9F%%87%%A9%%F0%%9F%%87%%AA%%20Frankfurt", testUUID, port)
+	bad := fmt.Sprintf("vless://00000000-0000-4000-8000-000000000000@127.0.0.1:%d?type=tcp#Wrong%%20id", port)
+	var mu sync.Mutex
+	content := good + "\n" + bad + "\ntuic://x@h:1#Unusable\n"
+	sub := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		mu.Lock()
+		defer mu.Unlock()
+		w.Header().Set("Subscription-Userinfo", "upload=1000; download=2000; total=10737418240; expire=1893456000")
+		_, _ = io.WriteString(w, base64.StdEncoding.EncodeToString([]byte(content)))
+	}))
+	defer sub.Close()
+
+	// Preview lists the configs, with the flag read from the name.
+	code, prev := h.do("POST", "/api/subscriptions/preview", fmt.Sprintf(`{"url":%q}`, sub.URL), true)
+	if code != 200 || len(prev["configs"].([]any)) != 2 || len(prev["unusable"].([]any)) != 1 {
+		t.Fatalf("preview: %d %v", code, prev)
+	}
+	first := prev["configs"].([]any)[0].(map[string]any)
+	if first["key"] != "🇩🇪 Frankfurt" || first["country"] != "de" || first["summary"] != "VLESS" {
+		t.Fatalf("preview item: %v", first)
+	}
+	if prev["usage"].(map[string]any)["total"] != float64(10737418240) {
+		t.Fatalf("usage: %v", prev["usage"])
+	}
+
+	// Watch both, tested here on the panel.
+	code, out := h.long("POST", "/api/subscriptions", fmt.Sprintf(`{"name":"Shop","url":%q,"interval":20,"testUrl":%q,"keys":["🇩🇪 Frankfurt","Wrong id"]}`,
+		sub.URL, target.URL+"/generate_204"))
+	if code != 200 || out["result"] == nil {
+		t.Fatalf("create: %d %v", code, out)
+	}
+	res := out["result"].(map[string]any)
+	ids := res["monitorIds"].([]any)
+	if res["added"] != float64(2) || len(ids) != 2 {
+		t.Fatalf("sync: %v", res)
+	}
+	subID := int(out["subscription"].(map[string]any)["id"].(float64))
+	info := out["subscription"].(map[string]any)["info"].(map[string]any)
+	if info["configs"] != float64(2) || info["unusable"] != float64(1) || info["total"] != float64(10737418240) {
+		t.Fatalf("info: %v", info)
+	}
+	goodID, badID := int(ids[0].(float64)), int(ids[1].(float64))
+	m := h.waitStatus(goodID, 1, 15*time.Second)
+	if m["country"] != "de" || m["name"] != "Frankfurt" || m["xray"].(map[string]any)["summary"] != "VLESS" || !strings.Contains(m["last"].(map[string]any)["msg"].(string), "connected in") {
+		t.Fatalf("good config: %v", m)
+	}
+	m = h.waitStatus(badID, 2, 15*time.Second) // pending: one retry before down
+	if !strings.Contains(m["last"].(map[string]any)["msg"].(string), "closed") {
+		t.Errorf("bad config message: %v", m["last"])
+	}
+
+	// One-off test from the panel.
+	if _, r := h.long("POST", "/api/xray/test", fmt.Sprintf(`{"link":%q,"testUrl":%q}`, good, target.URL)); r["ok"] != true {
+		t.Fatalf("test now: %v", r)
+	}
+
+	// A server with neo-uptime-agent takes over the tests.
+	_, ag := h.do("POST", "/api/agents", `{"name":"Iran","interval":5,"autoImport":false}`, true)
+	agentID := int(ag["agent"].(map[string]any)["id"].(float64))
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go agent.New(agent.Config{Server: h.srv.URL, Token: ag["token"].(string), Interval: 5 * time.Second,
+		BackpackDir: t.TempDir(), KarizDir: t.TempDir(), NoPing: true}).Run(ctx)
+
+	code, out = h.long("PUT", fmt.Sprintf("/api/subscriptions/%d", subID), fmt.Sprintf(`{"name":"Shop","url":%q,"agentId":%d,"interval":20,"testUrl":%q}`,
+		sub.URL, agentID, target.URL+"/generate_204"))
+	if code != 200 {
+		t.Fatalf("move tests to the agent: %d %v", code, out)
+	}
+	deadline := time.Now().Add(40 * time.Second)
+	for {
+		_, m = h.do("GET", fmt.Sprintf("/api/monitors/%d", goodID), "", false)
+		if x, _ := m["xray"].(map[string]any); x["from"] == "Iran" && m["last"].(map[string]any)["status"] == float64(1) {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("no result from the agent: %v", m)
+		}
+		time.Sleep(300 * time.Millisecond)
+	}
+	if !strings.Contains(m["last"].(map[string]any)["msg"].(string), "from Iran") {
+		t.Errorf("agent result message: %v", m["last"])
+	}
+	_, m = h.do("GET", fmt.Sprintf("/api/monitors/%d", badID), "", false)
+	if m["config"].(map[string]any)["agentId"] != float64(agentID) {
+		t.Fatalf("subscription settings did not reach its monitors: %v", m["config"])
+	}
+
+	// One-off test and fetch through the agent.
+	if _, r := h.long("POST", "/api/xray/test", fmt.Sprintf(`{"link":%q,"testUrl":%q,"agentId":%d}`, good, target.URL, agentID)); r["ok"] != true {
+		t.Fatalf("test through the agent: %v", r)
+	}
+	if _, r := h.long("POST", "/api/xray/test", fmt.Sprintf(`{"link":%q,"testUrl":%q,"agentId":%d}`, bad, target.URL, agentID)); r["ok"] != false || r["error"] == "" {
+		t.Fatalf("bad config through the agent: %v", r)
+	}
+
+	// The subscription changes: the bad config leaves, the good one moves.
+	mu.Lock()
+	content = strings.Replace(good, "127.0.0.1", "localhost", 1) + "\n"
+	mu.Unlock()
+	code, out = h.long("POST", fmt.Sprintf("/api/subscriptions/%d/refresh", subID), `{}`)
+	if r := out["result"].(map[string]any); code != 200 || r["updated"] != float64(1) || r["removed"] != float64(1) || r["added"] != float64(0) {
+		t.Fatalf("refresh: %d %v", code, out)
+	}
+	_, m = h.do("GET", fmt.Sprintf("/api/monitors/%d", badID), "", false)
+	if m["active"] != false || m["config"].(map[string]any)["gone"] != true {
+		t.Fatalf("a config that left should be paused: %v", m)
+	}
+	_, m = h.do("GET", fmt.Sprintf("/api/monitors/%d", goodID), "", false)
+	if m["xray"].(map[string]any)["endpoint"] != fmt.Sprintf("localhost:%d", port) {
+		t.Fatalf("changed config not updated: %v", m["xray"])
+	}
+
+	// Deleting the subscription takes its monitors and group with it.
+	if code, _ := h.do("DELETE", fmt.Sprintf("/api/subscriptions/%d", subID), "", true); code != 200 {
+		t.Fatal("delete failed")
+	}
+	if _, d := h.do("GET", "/api/dashboard", "", false); len(d["monitors"].([]any)) != 0 {
+		t.Fatalf("monitors left behind: %v", d["monitors"])
+	}
+}

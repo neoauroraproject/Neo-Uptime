@@ -12,6 +12,7 @@ import MonitorDetail from './pages/MonitorDetail'
 import MonitorForm from './pages/MonitorForm'
 import Tunnels from './pages/Tunnels'
 import Servers from './pages/Servers'
+import Configs from './pages/Configs'
 import StatusPages from './pages/StatusPages'
 import StatusPageEditor from './pages/StatusPageEditor'
 import PublicStatus from './pages/status/PublicStatus'
@@ -95,6 +96,7 @@ export default function App() {
           <Route path="/tunnels" element={<Tunnels />} />
           <Route path="/tunnels/panels" element={<Tunnels tab="panels" />} />
           <Route path="/servers" element={<Servers />} />
+          <Route path="/configs" element={<Configs />} />
           <Route path="/status-pages" element={<StatusPages />} />
           <Route path="/status-pages/:id" element={<StatusPageEditor />} />
           <Route path="/maintenance" element={<MaintenancePage />} />

@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom'
-import { Cable, Languages, LayoutDashboard, LogOut, Menu as MenuIcon, Monitor, Moon, Plus, Rss, Server, Settings, Sun, Wrench, X } from 'lucide-react'
+import { Cable, Languages, LayoutDashboard, LogOut, Menu as MenuIcon, Monitor, Moon, Plus, Rocket, Rss, Server, Settings, Sun, Wrench, X } from 'lucide-react'
 import { api } from '../lib/api'
 import { useLiveEvents } from '../lib/live'
 import { canEdit, useApp } from '../lib/store'
@@ -10,11 +10,13 @@ import { useLang, useT, type Lang } from '../lib/i18n'
 import { Button, Menu } from './ui'
 import { Logo } from './meta'
 import { ProjectLinks } from './brand'
+import { AdCard } from './AdCard'
 
 const nav = [
   { to: '/dashboard', label: 'Dashboard', icon: LayoutDashboard },
   { to: '/servers', label: 'Servers', icon: Server },
   { to: '/tunnels', label: 'Tunnels', icon: Cable },
+  { to: '/configs', label: 'Configs', icon: Rocket },
   { to: '/status-pages', label: 'Status pages', icon: Rss },
   { to: '/maintenance', label: 'Maintenance', icon: Wrench },
   { to: '/settings', label: 'Settings', icon: Settings },
@@ -107,6 +109,7 @@ export default function Shell() {
     s.loadNotifications().catch(() => {})
     s.loadPanels().catch(() => {})
     s.loadAgents().catch(() => {})
+    s.loadSubscriptions().catch(() => {})
   }, [])
 
   useEffect(() => setDrawer(false), [loc.pathname])
@@ -155,6 +158,7 @@ export default function Shell() {
         ))}
       </nav>
       <div className="mt-auto p-4 space-y-3">
+        <AdCard placement="sidebar" />
         <div className="rounded-2xl border border-line bg-surface-2/60 p-3 space-y-2.5">
           <div className="flex items-center justify-between">
             <span className="text-[12px] uppercase tracking-wider text-subtle font-semibold">{t('Live')}</span>

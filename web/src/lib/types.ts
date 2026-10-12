@@ -5,7 +5,7 @@ export type MonitorType =
   | 'http' | 'keyword' | 'json-query' | 'tcp' | 'ping' | 'dns' | 'push' | 'group'
   | 'docker' | 'postgres' | 'mysql' | 'redis' | 'backpack-tunnel' | 'backpack-panel'
   | 'agent' | 'agent-tunnel' | 'smtp' | 'mongodb' | 'mssql' | 'mqtt' | 'grpc' | 'radius'
-  | 'snmp' | 'steam' | 'kafka' | 'udp' | 'websocket' | 'tls'
+  | 'snmp' | 'steam' | 'kafka' | 'udp' | 'websocket' | 'tls' | 'xray'
 
 export interface MonitorConfig {
   url?: string
@@ -51,6 +51,12 @@ export interface MonitorConfig {
   warnDays?: number
   latencyAlertMs?: number
   latencyAlertFor?: number
+  // V2Ray / Xray config
+  link?: string
+  testUrl?: string
+  subscriptionId?: number
+  configName?: string
+  gone?: boolean
 }
 
 export interface MonitorTag { tagId: number; name: string; color: string; value: string }
@@ -167,9 +173,75 @@ export interface MonitorView extends Monitor {
   tunnel?: Tunnel
   system?: PanelSystem
   agent?: AgentInfo
+  xray?: XrayInfo
   nextCheck: number
   maintenance: boolean
   target: string
+}
+
+/** A V2Ray/Xray config as the UI shows it — never the link itself. */
+export interface XrayInfo {
+  summary: string
+  protocol: string
+  network: string
+  security: string
+  endpoint: string
+  connect?: number
+  from?: string
+}
+
+export interface SubscriptionInfo {
+  title?: string
+  upload?: number
+  download?: number
+  total?: number
+  expire?: number
+  hasUsage?: boolean
+  configs: number
+  unusable?: number
+  via?: string
+}
+
+export interface Subscription {
+  id: number
+  name: string
+  url: string
+  agentId: number
+  interval: number
+  timeout: number
+  testUrl: string
+  autoImport: boolean
+  refreshMinutes: number
+  groupMonitorId: number | null
+  skip: string[]
+  info: SubscriptionInfo
+  lastFetch: number
+  lastError: string
+  createdAt: number
+  updatedAt: number
+}
+
+export interface SubPreviewItem { key: string; label: string; name: string; summary: string; protocol: string; endpoint: string; country?: string; link?: string }
+export interface SubPreview {
+  title: string
+  usage?: { upload: number; download: number; total: number; expire: number } | null
+  configs: SubPreviewItem[]
+  unusable: { name: string; error: string }[]
+  via: string
+}
+
+/** A text ad from the project's feed (ads.json). */
+export interface Ad {
+  id: string
+  placements?: string[]
+  lang?: string
+  badge?: string
+  title: string
+  text?: string
+  button?: string
+  url?: string
+  color?: string
+  weight?: number
 }
 
 export interface Tag { id: number; name: string; color: string; createdAt: number }

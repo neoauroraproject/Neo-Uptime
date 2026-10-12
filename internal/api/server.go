@@ -14,8 +14,10 @@ import (
 	"path"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
+	"github.com/neoauroraproject/Neo-Uptime/internal/ads"
 	"github.com/neoauroraproject/Neo-Uptime/internal/auth"
 	"github.com/neoauroraproject/Neo-Uptime/internal/backpack"
 	"github.com/neoauroraproject/Neo-Uptime/internal/certs"
@@ -38,6 +40,8 @@ type Server struct {
 	hosts   hostTable
 	certs   *certs.Manager // nil until EnableHTTPS
 	port    int            // the panel's own port, for agent addresses
+	adsMu   sync.Mutex
+	ads     *ads.Service // nil until StartAds
 }
 
 // SetPanelPort records the port the panel listens on.
@@ -99,6 +103,8 @@ func (s *Server) routes() {
 	m.HandleFunc("GET /api/settings/public", s.need(roleViewer, s.handlePublicSettings))
 	m.HandleFunc("GET /api/agents", s.need(roleViewer, s.handleListAgents))
 	m.HandleFunc("GET /api/agents/{id}", s.need(roleViewer, s.handleGetAgent))
+	m.HandleFunc("GET /api/subscriptions", s.need(roleViewer, s.handleListSubscriptions))
+	m.HandleFunc("GET /api/ads", s.need(roleViewer, s.handleAds))
 
 	// own account — any signed-in browser user
 	m.HandleFunc("PUT /api/me/password", s.session(s.handleChangePassword))
@@ -146,6 +152,13 @@ func (s *Server) routes() {
 	m.HandleFunc("POST /api/notifications/telegram/chats", s.need(roleEditor, s.handleTelegramChats))
 	m.HandleFunc("POST /api/status-pages/preview", s.need(roleEditor, s.handlePreviewStatusPage))
 	m.HandleFunc("POST /api/uploads", s.need(roleEditor, s.handleUpload))
+	m.HandleFunc("POST /api/subscriptions/preview", s.need(roleEditor, s.handlePreviewSubscription))
+	m.HandleFunc("POST /api/subscriptions", s.need(roleEditor, s.handleCreateSubscription))
+	m.HandleFunc("PUT /api/subscriptions/{id}", s.need(roleEditor, s.handleUpdateSubscription))
+	m.HandleFunc("POST /api/subscriptions/{id}/refresh", s.need(roleEditor, s.handleRefreshSubscription))
+	m.HandleFunc("DELETE /api/subscriptions/{id}", s.need(roleEditor, s.handleDeleteSubscription))
+	m.HandleFunc("POST /api/xray/test", s.need(roleEditor, s.handleTestConfig))
+	m.HandleFunc("POST /api/xray/parse", s.need(roleEditor, s.handleParseConfig))
 
 	// admin, browser session only
 	m.HandleFunc("GET /api/settings", s.admin(s.handleGetSettings))

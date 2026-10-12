@@ -52,8 +52,8 @@ func (s *Server) handleAgentReport(w http.ResponseWriter, r *http.Request) {
 		writeStatus(w, http.StatusBadRequest, agentproto.Ack{Error: "invalid report: " + err.Error()})
 		return
 	}
-	s.mgr.IngestAgentReport(r.Context(), a, &rep, ip)
-	writeJSON(w, agentproto.Ack{OK: true, Interval: a.Interval, Name: a.Name})
+	reply := s.mgr.IngestAgentReport(r.Context(), a, &rep, ip)
+	writeJSON(w, agentproto.Ack{OK: true, Interval: a.Interval, Name: a.Name, Probes: reply.Probes, Jobs: reply.Jobs})
 }
 
 type agentView struct {

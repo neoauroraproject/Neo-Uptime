@@ -352,6 +352,27 @@ CREATE TABLE uploads (
 	`
 ALTER TABLE status_pages ADD COLUMN hide TEXT NOT NULL DEFAULT '';
 `,
+	// v5 — V2Ray subscriptions.
+	`
+CREATE TABLE subscriptions (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  name TEXT NOT NULL,
+  url TEXT NOT NULL,
+  agent_id INTEGER NOT NULL DEFAULT 0,
+  interval INTEGER NOT NULL DEFAULT 60,
+  timeout INTEGER NOT NULL DEFAULT 15,
+  test_url TEXT NOT NULL DEFAULT '',
+  auto_import INTEGER NOT NULL DEFAULT 1,
+  refresh_minutes INTEGER NOT NULL DEFAULT 60,
+  group_monitor_id INTEGER,
+  skip TEXT NOT NULL DEFAULT '[]',
+  info TEXT NOT NULL DEFAULT '{}',
+  last_fetch INTEGER NOT NULL DEFAULT 0,
+  last_error TEXT NOT NULL DEFAULT '',
+  created_at INTEGER NOT NULL,
+  updated_at INTEGER NOT NULL
+);
+`,
 }
 
 func (db *DB) migrate(ctx context.Context) error {

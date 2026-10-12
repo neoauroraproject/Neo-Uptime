@@ -31,6 +31,7 @@ type State struct {
 	Tunnel    *backpack.Tunnel `json:"tunnel,omitempty"`
 	System    *backpack.System `json:"system,omitempty"`
 	Agent     *AgentInfo       `json:"agent,omitempty"`
+	Xray      *XrayInfo        `json:"xray,omitempty"`
 	NextCheck int64            `json:"nextCheck"` // unix ms
 
 	lastPush  time.Time
@@ -49,6 +50,7 @@ type Snapshot struct {
 	Tunnel    *backpack.Tunnel `json:"tunnel,omitempty"`
 	System    *backpack.System `json:"system,omitempty"`
 	Agent     *AgentInfo       `json:"agent,omitempty"`
+	Xray      *XrayInfo        `json:"xray,omitempty"`
 	NextCheck int64            `json:"nextCheck"`
 }
 
@@ -74,6 +76,7 @@ type Manager struct {
 	agentOf map[int64]int64 // monitor id -> agent id
 
 	importMu sync.Mutex
+	subMu    sync.Mutex
 
 	maintMu sync.RWMutex
 	maints  []*store.Maintenance
@@ -114,6 +117,7 @@ func (mg *Manager) Start(ctx context.Context) error {
 	go mg.maintenanceWatcher()
 	go mg.housekeeping()
 	go mg.panelSync()
+	go mg.subscriptionSync()
 	return nil
 }
 
@@ -160,7 +164,7 @@ func (mg *Manager) States() map[int64]Snapshot {
 	out := make(map[int64]Snapshot, len(ids))
 	for i, st := range sts {
 		st.mu.Lock()
-		out[ids[i]] = Snapshot{Last: st.Last, Retries: st.Retries, Cert: st.Cert, Tunnel: st.Tunnel, System: st.System, Agent: st.Agent, NextCheck: st.NextCheck}
+		out[ids[i]] = Snapshot{Last: st.Last, Retries: st.Retries, Cert: st.Cert, Tunnel: st.Tunnel, System: st.System, Agent: st.Agent, Xray: st.Xray, NextCheck: st.NextCheck}
 		st.mu.Unlock()
 	}
 	return out
@@ -171,7 +175,7 @@ func (mg *Manager) StateOf(id int64) Snapshot {
 	st := mg.state(id)
 	st.mu.Lock()
 	defer st.mu.Unlock()
-	return Snapshot{Last: st.Last, Retries: st.Retries, Cert: st.Cert, Tunnel: st.Tunnel, System: st.System, Agent: st.Agent, NextCheck: st.NextCheck}
+	return Snapshot{Last: st.Last, Retries: st.Retries, Cert: st.Cert, Tunnel: st.Tunnel, System: st.System, Agent: st.Agent, Xray: st.Xray, NextCheck: st.NextCheck}
 }
 
 // Upsert (re)starts a monitor after it was created or changed.
@@ -327,6 +331,9 @@ func (mg *Manager) tick(ctx context.Context, m *store.Monitor) time.Duration {
 	}
 	if ctx.Err() != nil {
 		return time.Second
+	}
+	if res.Skip {
+		return mg.interval(m)
 	}
 	status := mg.process(ctx, m, res)
 	if status == store.StatusPending {
@@ -500,6 +507,9 @@ func (mg *Manager) process(ctx context.Context, m *store.Monitor, res Result) in
 	if res.Agent != nil {
 		st.Agent = res.Agent
 	}
+	if res.Xray != nil {
+		st.Xray = res.Xray
+	}
 
 	notifyStatus := important && shouldNotify(prev, status)
 	var downtime time.Duration
@@ -521,7 +531,7 @@ func (mg *Manager) process(ctx context.Context, m *store.Monitor, res Result) in
 		}
 	}
 	latency := mg.latencyEvent(m, st, hb, now)
-	cert, tunnel, system, agentInfo := st.Cert, st.Tunnel, st.System, st.Agent
+	cert, tunnel, system, agentInfo, xinfo := st.Cert, st.Tunnel, st.System, st.Agent, st.Xray
 	st.mu.Unlock()
 
 	mg.pub.Publish("heartbeat", map[string]any{
@@ -531,6 +541,7 @@ func (mg *Manager) process(ctx context.Context, m *store.Monitor, res Result) in
 		"tunnel":    tunnel,
 		"system":    system,
 		"agent":     agentInfo,
+		"xray":      xinfo,
 	})
 
 	if notifyStatus || resend {
@@ -637,6 +648,8 @@ func Target(m *store.Monitor) string {
 		return c.Hostname
 	case TypeWebSocket:
 		return c.URL
+	case TypeXray:
+		return xrayTarget(c.Link)
 	}
 	return ""
 }

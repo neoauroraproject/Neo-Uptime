@@ -106,6 +106,14 @@ type MonitorConfig struct {
 	Security    string `json:"security,omitempty"`    // SMTP: none | starttls | tls ; gRPC: tls
 	Payload     string `json:"payload,omitempty"`     // UDP
 	WarnDays    int    `json:"warnDays,omitempty"`    // TLS certificate monitor
+	// V2Ray / Xray config, tested through a real Xray core. AgentID, when
+	// set, is the server that runs the test (0 = this panel).
+	Link           string `json:"link,omitempty"`
+	TestURL        string `json:"testUrl,omitempty"`
+	SubscriptionID int64  `json:"subscriptionId,omitempty"`
+	ConfigName     string `json:"configName,omitempty"` // its name in the subscription
+	Gone           bool   `json:"gone,omitempty"`       // no longer in the subscription
+
 	// Latency alert: notify when the response time stays above LatencyAlertMs
 	// for LatencyAlertFor seconds (and again when it recovers). 0 turns it off.
 	LatencyAlertMs  int `json:"latencyAlertMs,omitempty"`
@@ -293,6 +301,40 @@ type Agent struct {
 	LastIP         string `json:"lastIp"`
 	Version        string `json:"version"`
 	Hostname       string `json:"hostname"`
+}
+
+// Subscription is a V2Ray subscription link: its configs are monitors of
+// type "xray", kept in step with the link.
+type Subscription struct {
+	ID             int64            `json:"id"`
+	Name           string           `json:"name"`
+	URL            string           `json:"url"`
+	AgentID        int64            `json:"agentId"` // where configs are tested; 0 = this panel
+	Interval       int              `json:"interval"`
+	Timeout        int              `json:"timeout"`
+	TestURL        string           `json:"testUrl"`
+	AutoImport     bool             `json:"autoImport"`
+	RefreshMinutes int              `json:"refreshMinutes"`
+	GroupMonitorID *int64           `json:"groupMonitorId"`
+	Skip           []string         `json:"skip"` // config names not to watch
+	Info           SubscriptionInfo `json:"info"`
+	LastFetch      int64            `json:"lastFetch"`
+	LastError      string           `json:"lastError"`
+	CreatedAt      int64            `json:"createdAt"`
+	UpdatedAt      int64            `json:"updatedAt"`
+}
+
+// SubscriptionInfo is what the last fetch found.
+type SubscriptionInfo struct {
+	Title    string `json:"title,omitempty"`
+	Upload   uint64 `json:"upload,omitempty"`
+	Download uint64 `json:"download,omitempty"`
+	Total    uint64 `json:"total,omitempty"`
+	Expire   int64  `json:"expire,omitempty"`
+	HasUsage bool   `json:"hasUsage,omitempty"`
+	Configs  int    `json:"configs"`
+	Unusable int    `json:"unusable,omitempty"`
+	Via      string `json:"via,omitempty"` // "panel" or the server that fetched it
 }
 
 // StatusAPIKey grants read access to one status page's data over the private

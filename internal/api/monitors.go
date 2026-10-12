@@ -13,6 +13,7 @@ import (
 	"github.com/neoauroraproject/Neo-Uptime/internal/backpack"
 	"github.com/neoauroraproject/Neo-Uptime/internal/monitor"
 	"github.com/neoauroraproject/Neo-Uptime/internal/store"
+	"github.com/neoauroraproject/Neo-Uptime/internal/xray"
 )
 
 // monitorView is a monitor together with what is known about it right now.
@@ -26,6 +27,7 @@ type monitorView struct {
 	Agent       *monitor.AgentInfo `json:"agent,omitempty"`
 	Tunnel      *backpack.Tunnel   `json:"tunnel,omitempty"`
 	System      *backpack.System   `json:"system,omitempty"`
+	Xray        *monitor.XrayInfo  `json:"xray,omitempty"`
 	NextCheck   int64              `json:"nextCheck"`
 	Maintenance bool               `json:"maintenance"`
 	Target      string             `json:"target"`
@@ -40,6 +42,7 @@ func redact(m *store.Monitor) *store.Monitor {
 	c.Config.Body = ""
 	c.Config.Password = ""
 	c.Config.Secret = ""
+	c.Config.Link = ""
 	c.PushToken = ""
 	return &c
 }
@@ -66,6 +69,10 @@ func (s *Server) views(ctx context.Context, list []*store.Monitor, who *caller) 
 			NextCheck: st.NextCheck, Target: monitor.Target(m),
 			Uptime24: -1, Uptime30: -1, AvgPing24: -1,
 			Maintenance: m.Active && s.mgr.InMaintenance(m.ID),
+		}
+		// The config as it is now, with what its last test measured.
+		if v.Xray = monitor.XrayDetails(m); v.Xray != nil && st.Xray != nil {
+			v.Xray.Connect, v.Xray.From = st.Xray.Connect, st.Xray.From
 		}
 		if u, ok := u24[m.ID]; ok {
 			v.Uptime24, v.AvgPing24 = u.Ratio, u.AvgPing
@@ -154,6 +161,9 @@ func (s *Server) normalize(ctx context.Context, m *store.Monitor, existing *stor
 	}
 	m.RetryInterval = max(10, min(86400, m.RetryInterval))
 	m.MaxRetries = max(0, min(20, m.MaxRetries))
+	if m.Timeout <= 0 && m.Type == monitor.TypeXray {
+		m.Timeout = 15
+	}
 	if m.Timeout <= 0 {
 		m.Timeout = int(min(48, max(5, float64(m.Interval)*0.8)))
 	}
@@ -273,6 +283,27 @@ func (s *Server) normalize(ctx context.Context, m *store.Monitor, existing *stor
 	case monitor.TypeMongo, monitor.TypeMSSQL:
 		if strings.TrimSpace(c.ConnectionString) == "" {
 			return fmt.Errorf("connection string is required")
+		}
+	case monitor.TypeXray:
+		c.Link = strings.TrimSpace(c.Link)
+		if c.Link == "" && existing != nil {
+			c.Link = existing.Config.Link
+		}
+		if _, err := xray.Parse(c.Link); err != nil {
+			return fmt.Errorf("this config cannot be used: %v", err)
+		}
+		if c.AgentID != 0 {
+			if _, err := s.db.GetAgent(ctx, c.AgentID); err != nil {
+				return fmt.Errorf("the server chosen to run the test does not exist")
+			}
+		}
+		if err := checkTestURL(c.TestURL); err != nil {
+			return err
+		}
+		// Which subscription a config came from is not for editing.
+		c.SubscriptionID, c.ConfigName, c.Gone = 0, "", false
+		if existing != nil && existing.Type == monitor.TypeXray {
+			c.SubscriptionID, c.ConfigName, c.Gone = existing.Config.SubscriptionID, existing.Config.ConfigName, existing.Config.Gone
 		}
 	}
 	m.Country = normCountry(m.Country)

@@ -74,11 +74,18 @@ ask() { # prompt default -> answer
   read -r ans </dev/tty || true
   printf '%s' "${ans:-$2}"
 }
+# The project's current announcement (ads.json in the repository).
+show_ad() {
+  local lang=en
+  case "${LANG:-}" in fa*) lang=fa ;; esac
+  [ -x "$BIN" ] && timeout 6 "$BIN" ad "$lang" 2>/dev/null || true
+}
 if [ "$UNINSTALL" -eq 0 ] && [ -z "$SERVER$TOKEN" ] && [ -x "$BIN" ] && [ -f "$ENV_FILE" ] && interactive; then
   cur_server="$(grep -E '^NEO_AGENT_SERVER=' "$ENV_FILE" | cut -d= -f2-)"
   cur_version="$("$BIN" version 2>/dev/null | awk '{print $2}' || true)"
   if systemctl is-active --quiet neo-uptime-agent; then state="${c_green}running${c_off}"; else state="${c_red}stopped${c_off}"; fi
-  printf '\n  neo-uptime-agent %s · reporting to %s · %s\n\n' "${cur_version:-?}" "$cur_server" "$state"
+  printf '\n  neo-uptime-agent %s · reporting to %s · %s\n' "${cur_version:-?}" "$cur_server" "$state"
+  show_ad
   printf '%s\n' "  1) Update the agent" "  2) Change the Neo Uptime address" "  3) Change the token" \
     "  4) Send a report now (test)" "  5) Status and recent logs" "  6) Uninstall the agent" "  0) Exit" ""
   choice="$(ask "  Choose [1]: " 1)"
@@ -209,3 +216,4 @@ fi
 printf '  %sLogs%s       journalctl -u neo-uptime-agent -f\n' "$c_dim" "$c_off"
 printf '  %sSettings%s   %s\n' "$c_dim" "$c_off" "$ENV_FILE"
 printf '  %sOne report%s neo-uptime-agent once\n\n' "$c_dim" "$c_off"
+show_ad

@@ -43,6 +43,7 @@ type Agent struct {
 	cfg    Config
 	sys    *systemSampler
 	client *http.Client
+	probe  *prober
 
 	mu      sync.Mutex
 	lastRTT time.Duration
@@ -93,6 +94,7 @@ func New(cfg Config) *Agent {
 		cfg:    cfg,
 		sys:    newSystemSampler(),
 		client: &http.Client{Transport: tr, Timeout: 25 * time.Second},
+		probe:  newProber(),
 	}
 }
 
@@ -114,6 +116,7 @@ func (a *Agent) Collect(ctx context.Context) *agentproto.Report {
 	go func() { defer wg.Done(); r.Backpack = collectBackpack(ctx, a.cfg) }()
 	go func() { defer wg.Done(); r.Kariz = collectKariz(ctx, a.cfg) }()
 	wg.Wait()
+	a.probe.attach(r)
 	return r
 }
 
@@ -200,34 +203,64 @@ func (a *Agent) sendTo(ctx context.Context, server string, body []byte) (*agentp
 // Run reports until ctx ends.
 func (a *Agent) Run(ctx context.Context) {
 	log.Printf("neo-uptime-agent %s reporting to %s every %s", version.Version, strings.Join(a.Servers(), " or "), a.cfg.Interval)
+	go a.probe.loop(ctx)
 	failures := 0
 	interval := a.cfg.Interval
+	next := time.Now()
 	for {
-		cctx, cancel := context.WithTimeout(ctx, 25*time.Second)
-		r := a.Collect(cctx)
-		cancel()
-		sctx, cancel := context.WithTimeout(ctx, time.Duration(min(len(a.Servers()), 4))*15*time.Second+5*time.Second)
-		ack, err := a.Send(sctx, r)
-		cancel()
-		switch {
-		case err != nil:
-			failures++
-			if failures == 1 || failures%30 == 0 {
-				log.Printf("report failed (%d in a row): %v", failures, err)
-			}
-		default:
-			if failures > 0 {
-				log.Printf("reporting again after %d failed attempts", failures)
-			}
-			failures = 0
-			if ack.Interval >= 5 && ack.Interval <= 600 {
-				interval = time.Duration(ack.Interval) * time.Second
-			}
-		}
 		select {
 		case <-ctx.Done():
 			return
-		case <-time.After(interval):
+		case <-time.After(time.Until(next)):
+			cctx, cancel := context.WithTimeout(ctx, 25*time.Second)
+			r := a.Collect(cctx)
+			cancel()
+			ack, err := a.deliver(ctx, r)
+			switch {
+			case err != nil:
+				failures++
+				if failures == 1 || failures%30 == 0 {
+					log.Printf("report failed (%d in a row): %v", failures, err)
+				}
+			default:
+				if failures > 0 {
+					log.Printf("reporting again after %d failed attempts", failures)
+				}
+				failures = 0
+				if ack.Interval >= 5 && ack.Interval <= 600 {
+					interval = time.Duration(ack.Interval) * time.Second
+				}
+			}
+			next = time.Now().Add(interval)
+		case <-a.probe.wake:
+			// Test results are ready: send them now rather than at the next
+			// report. A short pause lets results that finish together share one.
+			select {
+			case <-ctx.Done():
+				return
+			case <-time.After(1500 * time.Millisecond):
+			}
+			if time.Until(next) < 3*time.Second {
+				continue // the regular report is about to carry them
+			}
+			r := &agentproto.Report{Format: agentproto.Version, AgentVersion: version.Version, Time: time.Now().UnixMilli(),
+				Interval: int(interval / time.Second), Early: true}
+			a.probe.attach(r)
+			_, _ = a.deliver(ctx, r)
 		}
 	}
+}
+
+// deliver sends a report and applies what the server answers.
+func (a *Agent) deliver(ctx context.Context, r *agentproto.Report) (*agentproto.Ack, error) {
+	sctx, cancel := context.WithTimeout(ctx, time.Duration(min(len(a.Servers()), 4))*15*time.Second+5*time.Second)
+	defer cancel()
+	ack, err := a.Send(sctx, r)
+	if err != nil {
+		return nil, err
+	}
+	a.probe.delivered(r.Jobs)
+	a.probe.set(ack.Probes)
+	a.probe.add(ack.Jobs)
+	return ack, nil
 }

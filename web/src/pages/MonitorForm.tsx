@@ -3,13 +3,13 @@ import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { ArrowLeft, ArrowRight, Bell, Check, ChevronDown, CircleCheck, Play, Plus, Save, Search, Server, X } from 'lucide-react'
 import { api } from '../lib/api'
 import { canEdit, useApp } from '../lib/store'
-import { clsx, duration, n } from '../lib/format'
+import { bytes, clsx, duration, n } from '../lib/format'
 import { useT } from '../lib/i18n'
-import type { AgentAddresses, AgentSource, Monitor, MonitorConfig, MonitorTag, MonitorType, PanelSnapshot, Tunnel } from '../lib/types'
-import { Alert, Button, Checkbox, Empty, Field, Input, Select, Skeleton, Spinner, Switch, TagChip, Textarea, toast } from '../components/ui'
+import type { AgentAddresses, AgentSource, Monitor, MonitorConfig, MonitorTag, MonitorType, PanelSnapshot, SubPreview, Subscription, Tunnel } from '../lib/types'
+import { Alert, Button, Checkbox, Empty, Field, Input, Segmented, Select, Skeleton, Spinner, Switch, TagChip, Textarea, toast } from '../components/ui'
 import { SourceBadge, TypeIcon, typeGroups, typeInfo } from '../components/meta'
 import { InstallBox } from './Servers'
-import { CountryPicker } from '../components/flag'
+import { CountryPicker, Flag } from '../components/flag'
 import { NotificationDialog } from '../components/NotificationDialog'
 
 type Draft = Omit<Monitor, 'id' | 'createdAt' | 'updatedAt' | 'sortOrder'>
@@ -22,11 +22,11 @@ const codePresets = ['200-299', '300-399', '400-499', '500-599']
 // The few types most people need, shown first as big cards.
 const popular: { type: MonitorType; label: string; help: string }[] = [
   { type: 'agent-tunnel', label: 'Tunnel', help: 'A BackPack or Kariz tunnel on one of your servers' },
+  { type: 'xray', label: 'V2Ray configs', help: 'A subscription link or single configs, connected for real through Xray' },
   { type: 'agent', label: 'Server', help: 'CPU, memory and tunnels of a server running the agent' },
   { type: 'http', label: 'Website', help: 'Is a website or API answering?' },
   { type: 'ping', label: 'Ping', help: 'Does a host answer, and how fast?' },
   { type: 'tcp', label: 'Port', help: 'Is a TCP port open?' },
-  { type: 'push', label: 'Cron job or script', help: 'Your script calls Neo Uptime; silence means down' },
 ]
 
 const steps = ['Type', 'Details', 'Alerts', 'Finish'] as const
@@ -36,6 +36,12 @@ const tunnelKeys = (f: Found) => [
   ...(f.backpack?.tunnels ?? []).map((tn) => `backpack/${tn.name}`),
   ...(f.kariz?.tunnels ?? []).map((tn) => `kariz/${tn.name}`),
 ]
+
+// Configs are best tested from inside the country their users are in: an
+// Iran server when there is one reporting, otherwise this panel.
+function insideAgent(agents: { id: number; country: string; online: boolean }[]) {
+  return agents.find((a) => a.country === 'ir' && a.online)?.id ?? 0
+}
 
 function blank(defaults: number[]): Draft {
   return {
@@ -85,10 +91,17 @@ export default function MonitorForm({ mode }: { mode: 'add' | 'edit' | 'clone' }
   const panels = useApp((s) => s.panels)
   const agents = useApp((s) => s.agents)
   const role = useApp((s) => s.role)
-  const [d, setD] = useState<Draft | null>(mode === 'add' ? blank(notifications.filter((x) => x.isDefault).map((x) => x.id)) : null)
   const [params] = useSearchParams()
+  // ?type=xray (and the like) opens the wizard on that type's details.
+  const startType = mode === 'add' && (params.get('type') ?? '') in typeInfo ? (params.get('type') as MonitorType) : null
+  const [d, setD] = useState<Draft | null>(() => {
+    if (mode !== 'add') return null
+    const b = blank(notifications.filter((x) => x.isDefault).map((x) => x.id))
+    if (!startType) return b
+    return { ...b, type: startType, config: { ...b.config, agentId: startType === 'xray' ? insideAgent(agents) : startType.startsWith('agent') ? agents[0]?.id : undefined } }
+  })
   // ?step=alerts opens an existing monitor straight at its alert settings.
-  const [step, setStep] = useState(mode === 'add' ? 0 : params.get('step') === 'alerts' ? 2 : 1)
+  const [step, setStep] = useState(mode === 'add' ? (startType ? 1 : 0) : params.get('step') === 'alerts' ? 2 : 1)
   const [nameTouched, setNameTouched] = useState(mode !== 'add')
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
@@ -109,6 +122,18 @@ export default function MonitorForm({ mode }: { mode: 'add' | 'edit' | 'clone' }
   const [found, setFound] = useState<Found | null>(null)
   const [pick, setPick] = useState<Set<string>>(new Set())
   const [laterToo, setLaterToo] = useState(true)
+  // V2Ray: a subscription (or configs pasted as a list), or one config.
+  const [xmode, setXmode] = useState<'sub' | 'one'>('sub')
+  const [subUrl, setSubUrl] = useState('')
+  const [subName, setSubName] = useState('')
+  const [preview, setPreview] = useState<SubPreview | null>(null)
+  const [previewErr, setPreviewErr] = useState('')
+  const [xpick, setXpick] = useState<Set<string>>(new Set())
+  const [xlater, setXlater] = useState(true)
+  const [parsed, setParsed] = useState<{ name: string; label: string; summary: string; endpoint: string; country?: string } | null>(null)
+  const [parseErr, setParseErr] = useState('')
+  const [tested, setTested] = useState<{ ok: boolean; ping?: number; connect?: number; error?: string } | null>(null)
+  const [testing, setTesting] = useState(false)
   const createdId = created?.id
   useEffect(() => {
     if (!createdId || found) return
@@ -158,6 +183,42 @@ export default function MonitorForm({ mode }: { mode: 'add' | 'edit' | 'clone' }
     api.get<{ backpack?: AgentSource; kariz?: AgentSource }>(`/api/agents/${agentId}`).then(setAgentData).catch(() => setAgentData(null))
   }, [agentId, d?.type])
 
+  const xlink = d?.type === 'xray' ? d.config.link ?? '' : ''
+  useEffect(() => {
+    setTested(null)
+    if (!xlink.trim()) {
+      setParsed(null)
+      setParseErr('')
+      return
+    }
+    const h = setTimeout(() => {
+      api.post<{ name: string; label: string; summary: string; endpoint: string; country?: string }>('/api/xray/parse', { link: xlink })
+        .then((r) => {
+          setParsed(r)
+          setParseErr('')
+          setD((cur) => (cur ? { ...cur, name: nameTouched ? cur.name : r.label.slice(0, 150), country: cur.country || r.country || '' } : cur))
+        })
+        .catch((e) => { setParsed(null); setParseErr((e as Error).message) })
+    }, 300)
+    return () => clearTimeout(h)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [xlink])
+
+  // The configs of a subscription, read when the last step opens (through the
+  // chosen server, when the panel cannot read it itself).
+  const xsubEarly = mode === 'add' && d?.type === 'xray' && xmode === 'sub'
+  const xNewServer = mode === 'add' && d?.type === 'xray' && newServer
+  const previewAgent = xNewServer ? created?.id : d?.config.agentId
+  const wantPreview = xsubEarly && step === steps.length - 1 && (!xNewServer || !!found)
+  useEffect(() => {
+    if (!wantPreview) return
+    setPreview(null)
+    setPreviewErr('')
+    api.post<SubPreview>('/api/subscriptions/preview', { url: subUrl.trim(), agentId: previewAgent ?? 0 })
+      .then((r) => { setPreview(r); setXpick(new Set(r.configs.map((x) => x.key))) })
+      .catch((e) => setPreviewErr((e as Error).message))
+  }, [wantPreview, subUrl, previewAgent])
+
   useEffect(() => {
     body.current?.scrollTo({ top: 0 })
     // Put the cursor in the first field of the step.
@@ -178,13 +239,16 @@ export default function MonitorForm({ mode }: { mode: 'add' | 'edit' | 'clone' }
   const agentTunnels: Tunnel[] = (c.source === 'kariz' ? agentData?.kariz?.tunnels : agentData?.backpack?.tunnels) ?? []
   const last = steps.length - 1
   const hasLatency = d.type !== 'group' && d.type !== 'push'
-  const serverFlow = mode === 'add' && (d.type === 'agent' || d.type === 'agent-tunnel') && (newServer || agents.length === 0)
+  const serverFlow = mode === 'add' && (((d.type === 'agent' || d.type === 'agent-tunnel') && (newServer || agents.length === 0)) || (d.type === 'xray' && newServer))
+  const xsub = xsubEarly
+  const isLinkSub = /^https?:\/\//i.test(subUrl.trim())
 
   const chooseType = (type: MonitorType) => {
     const next: MonitorConfig = { ...c }
     if (type.startsWith('backpack') && !c.panelId) next.panelId = panels[0]?.id
     if (type.startsWith('agent') && !c.agentId) next.agentId = agents[0]?.id
     if (type === 'agent-tunnel' && !c.source) next.source = 'backpack'
+    if (type === 'xray') next.agentId = insideAgent(agents)
     if (defaultPorts[type] && !c.port) next.port = defaultPorts[type]
     if (type === 'websocket' && !(c.url ?? '').startsWith('ws')) next.url = 'wss://'
     if (isHttp && !httpTypes.includes(type) && type !== 'websocket') next.port = defaultPorts[type] ?? 0
@@ -233,6 +297,11 @@ export default function MonitorForm({ mode }: { mode: 'add' | 'edit' | 'clone' }
 
   // The step's own fields must be valid before moving on.
   const stepValid = () => {
+    if (step === 1 && d.type === 'xray' && !xsub && parseErr) {
+      setError(parseErr)
+      return false
+    }
+    setError('')
     const fields = body.current?.querySelectorAll<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>('input, select, textarea') ?? []
     for (const f of fields) {
       if (!f.checkValidity()) {
@@ -297,14 +366,72 @@ export default function MonitorForm({ mode }: { mode: 'add' | 'edit' | 'clone' }
     }
   }
 
+  const runTest = async () => {
+    setTesting(true)
+    setTested(null)
+    try {
+      setTested(await api.post<{ ok: boolean; ping?: number; connect?: number; error?: string }>('/api/xray/test', { link: c.link, agentId: c.agentId ?? 0, testUrl: c.testUrl ?? '' }))
+    } catch (e) {
+      setTested({ ok: false, error: (e as Error).message })
+    } finally {
+      setTesting(false)
+    }
+  }
+
+  // Creates the V2Ray monitors: one config, a subscription, or a pasted list.
+  const startXray = async (agentId: number) => {
+    setError('')
+    setBusy(true)
+    const latency = { latencyAlertMs: c.latencyAlertMs ?? 0, latencyAlertFor: c.latencyAlertFor ?? 0 }
+    try {
+      if (!xsub) {
+        const saved = await api.post<Monitor>('/api/monitors', { ...d, timeout: d.timeout || 0, config: { ...c, agentId } })
+        toast.success(t('Monitor created'), t('The first test is running now.'))
+        await Promise.all([useApp.getState().loadDashboard(), useApp.getState().loadAgents()])
+        nav(`/dashboard/${saved.id}`)
+        return
+      }
+      const all = preview?.configs ?? []
+      const keys = all.filter((x) => xpick.has(x.key))
+      if (isLinkSub) {
+        const r = await api.post<{ subscription: Subscription; result?: { added: number }; error?: string }>('/api/subscriptions', {
+          name: subName.trim(), url: subUrl.trim(), agentId, testUrl: c.testUrl ?? '', autoImport: xlater, interval: d.interval,
+          keys: keys.map((x) => x.key), skip: all.filter((x) => !xpick.has(x.key)).map((x) => x.key), notificationIds: d.notificationIds, ...latency,
+        })
+        if (r.error) throw new Error(r.error)
+        toast.success(t('Monitoring started'), t('{n} configs are being tested.', { n: r.result?.added ?? keys.length }))
+      } else {
+        // Pasted configs: a group with one monitor each.
+        const g = await api.post<Monitor>('/api/monitors', {
+          name: subName.trim() || t('V2Ray configs'), type: 'group', parentId: null, active: true, interval: 60, retryInterval: 60, maxRetries: 0, timeout: 0,
+          resendInterval: 0, upsideDown: false, description: '', tags: [], notificationIds: [], country: '', config: {},
+        })
+        for (const x of keys) {
+          await api.post('/api/monitors', {
+            ...d, name: x.label, country: x.country ?? '', parentId: g.id, description: x.summary, timeout: 0,
+            config: { link: x.link, agentId, testUrl: c.testUrl ?? '', ...latency },
+          })
+        }
+        toast.success(t('Monitoring started'), t('{n} configs are being tested.', { n: keys.length }))
+      }
+      await Promise.all([useApp.getState().loadDashboard(), useApp.getState().loadSubscriptions(), useApp.getState().loadAgents()])
+      nav('/configs')
+    } catch (err) {
+      setError((err as Error).message)
+    } finally {
+      setBusy(false)
+    }
+  }
+
   const submit = (e: FormEvent) => {
     e.preventDefault()
     if (!stepValid()) return
     if (step < last && mode === 'add') setStep(step + 1)
     else if (serverFlow) {
       if (!created) createServer()
-      else if (found) startMonitoring()
-    } else save()
+      else if (found) (d.type === 'xray' ? startXray(created.id) : startMonitoring())
+    } else if (xsub) startXray(c.agentId ?? 0)
+    else save()
   }
   const goTo = (i: number) => {
     if (i === step) return
@@ -324,6 +451,7 @@ export default function MonitorForm({ mode }: { mode: 'add' | 'edit' | 'clone' }
     if (isHttp || d.type === 'websocket') return c.url ?? ''
     if (d.type.endsWith('tunnel')) return c.tunnelName ?? ''
     if (d.type === 'agent') return agents.find((a) => a.id === c.agentId)?.name ?? ''
+    if (d.type === 'xray') return parsed ? `${parsed.summary} · ${parsed.endpoint}` : ''
     if (hostTypes.includes(d.type)) return `${c.hostname ?? ''}${c.port ? `:${c.port}` : ''}`
     return ''
   })()
@@ -626,13 +754,86 @@ export default function MonitorForm({ mode }: { mode: 'add' | 'edit' | 'clone' }
         )
       )}
 
+      {d.type === 'xray' && (
+        <div className="space-y-5">
+          {mode === 'add' && (
+            <Segmented ariaLabel={t('What to add')} value={xmode} onChange={setXmode} className="w-full [&>button]:flex-1"
+              options={[{ value: 'sub', label: t('Subscription link') }, { value: 'one', label: t('One config') }]} />
+          )}
+          {xsub ? (
+            <>
+              <Field label={t('Subscription link')} required htmlFor="sub" help={t('The link you import into v2rayN or v2rayNG. Config links pasted one per line work too.')}>
+                <Textarea id="sub" dir="ltr" required className="font-mono text-[12.5px] min-h-20 break-all" value={subUrl} onChange={(e) => setSubUrl(e.target.value)} placeholder="https://panel.example.com/sub/…" />
+              </Field>
+              <Field label={t('Name (optional)')} htmlFor="subn" help={t('Shown above its configs. Empty: the address of the subscription.')}>
+                <Input id="subn" dir="auto" maxLength={100} value={subName} onChange={(e) => setSubName(e.target.value)} placeholder={t('e.g. My VPN shop')} />
+              </Field>
+            </>
+          ) : (
+            <>
+              {c.subscriptionId ? <Alert tone="info">{t('This config comes from a subscription; its link is kept up to date from there.')}</Alert> : null}
+              <Field label={t('Config link')} required htmlFor="xl" help="vless:// · vmess:// · trojan:// · ss:// · hysteria2://" error={parseErr || undefined}>
+                <Textarea id="xl" dir="ltr" required disabled={!!c.subscriptionId} className="font-mono text-[12.5px] min-h-24 break-all" value={c.link ?? ''} onChange={(e) => cfg('link', e.target.value)} placeholder="vless://…" />
+              </Field>
+              {parsed && (
+                <div className="rounded-2xl border border-line bg-surface-2/40 p-4 flex flex-wrap items-center gap-3">
+                  <Flag cc={parsed.country} size={22} />
+                  <div className="min-w-0 flex-1">
+                    <p className="font-medium truncate" dir="auto">{parsed.label}</p>
+                    <p className="text-[12.5px] text-muted truncate" dir="ltr">{parsed.summary} · {parsed.endpoint}</p>
+                  </div>
+                  {!xNewServer && <Button type="button" size="sm" loading={testing} icon={<Play className="size-3.5" />} onClick={runTest}>{t('Test now')}</Button>}
+                  {tested && (
+                    <p className={clsx('basis-full text-[13px]', tested.ok ? 'text-up' : 'text-down')} dir="auto">
+                      {tested.ok ? t('Works — connected in {c} ms, {p} ms once connected.', { c: Math.round(tested.connect ?? 0), p: Math.round(tested.ping ?? 0) }) : tested.error}
+                    </p>
+                  )}
+                </div>
+              )}
+            </>
+          )}
+          {xNewServer ? (
+            <div className="rounded-2xl border border-line bg-surface-2/40 p-4 space-y-4">
+              <div className="flex items-start justify-between gap-3">
+                <div className="flex items-start gap-3">
+                  <span className="grid place-items-center size-9 shrink-0 rounded-xl bg-accent-soft text-accent-ink"><Server className="size-4" /></span>
+                  <div>
+                    <p className="font-semibold">{t('Test from a new server')}</p>
+                    <p className="text-[13px] text-muted">{t('Give it a name. On the last step you run one command on it, and the tests run from there.')}</p>
+                  </div>
+                </div>
+                <Button type="button" size="sm" variant="ghost" onClick={() => setNewServer(false)}>{t('Pick an existing server')}</Button>
+              </div>
+              <div className="grid sm:grid-cols-[1fr_220px] gap-4">
+                <Field label={t('Server name')} required htmlFor="srvn">
+                  <Input id="srvn" dir="auto" required maxLength={80} value={srv.name} onChange={(e) => setSrv({ ...srv, name: e.target.value })} placeholder={t('e.g. Tehran')} />
+                </Field>
+                <Field label={t('Flag')} htmlFor="srvf"><CountryPicker id="srvf" value={srv.country} onChange={(v) => setSrv({ ...srv, country: v })} /></Field>
+              </div>
+            </div>
+          ) : (
+            <Field label={t('Test from')} htmlFor="xf" help={t('Where the test runs. Pick a server inside the country to see what your users there see.')}>
+              <Select id="xf" value={c.agentId ?? 0} onChange={(e) => {
+                if (e.target.value === 'new') return setNewServer(true)
+                setTested(null)
+                cfg('agentId', Number(e.target.value))
+              }}>
+                <option value={0}>{t('This panel’s server')}</option>
+                {agents.map((a) => <option key={a.id} value={a.id}>{a.name}{a.online ? '' : ` (${t('offline')})`}</option>)}
+                {mode === 'add' && <option value="new">{t('+ New server…')}</option>}
+              </Select>
+            </Field>
+          )}
+        </div>
+      )}
+
       {d.type === 'push' && (
         <Alert tone="info" title={t('Push URL')}>
           {d.pushToken ? <>{t('Your script should call')} <code className="font-mono text-fg break-all" dir="ltr">/api/push/{d.pushToken}?status=up&amp;msg=OK&amp;ping=</code></> : t('A private URL is generated when you save. Your script calls it; if it stays silent longer than the interval, the monitor goes down.')}
         </Alert>
       )}
 
-      {!serverFlow && <div className="grid sm:grid-cols-[1fr_220px] gap-4">
+      {!(serverFlow && d.type !== 'xray') && !xsub && <div className="grid sm:grid-cols-[1fr_220px] gap-4">
         <Field label={t('Friendly name')} required htmlFor="name">
           <Input id="name" dir="auto" value={d.name} onChange={(e) => { setNameTouched(true); set('name', e.target.value) }} placeholder={t('My website')} required maxLength={150} />
         </Field>
@@ -809,6 +1010,13 @@ export default function MonitorForm({ mode }: { mode: 'add' | 'edit' | 'clone' }
           </div>
         </More>
       )}
+      {d.type === 'xray' && (
+        <More title={t('Test address')}>
+          <Field label={t('Fetched through the config')} htmlFor="tu" help={t('Empty: {url}', { url: 'https://www.gstatic.com/generate_204' })}>
+            <Input id="tu" dir="ltr" type="url" className="font-mono" value={c.testUrl ?? ''} onChange={(e) => cfg('testUrl', e.target.value)} placeholder="https://www.gstatic.com/generate_204" />
+          </Field>
+        </More>
+      )}
       {d.type === 'websocket' && (
         <More title={t('Options')}>
           <Switch checked={!!c.ignoreTls} onChange={(v) => cfg('ignoreTls', v)} label={t('Ignore TLS errors')} description={t('Accept self-signed or expired certificates.')} />
@@ -856,6 +1064,67 @@ export default function MonitorForm({ mode }: { mode: 'add' | 'edit' | 'clone' }
     </div>
   )
 
+  const allPicked = !!preview && preview.configs.length > 0 && xpick.size === preview.configs.length
+  const usage = preview?.usage
+  const subList = (
+    <div className="space-y-4">
+      {previewErr ? <Alert tone="danger" title={t('Could not read the subscription')}>{previewErr}</Alert> : !preview ? (
+        <div className="flex items-center gap-3 rounded-2xl border border-dashed border-line-strong p-4">
+          <Spinner className="size-5" />
+          <div>
+            <p className="font-medium">{t('Reading the subscription…')}</p>
+            <p className="text-[13px] text-muted">{previewAgent ? t('If this panel cannot reach it, the server reads it.') : t('This takes a few seconds.')}</p>
+          </div>
+        </div>
+      ) : (
+        <>
+          {(preview.title || usage || preview.via) && (
+            <p className="text-[13px] text-muted flex flex-wrap gap-x-3" dir="auto">
+              {preview.title && <span>{preview.title}</span>}
+              {usage && <span dir="ltr">{bytes(usage.upload + usage.download)}{usage.total ? ` / ${bytes(usage.total)}` : ''}</span>}
+              {preview.via && <span>{t('read through {name}', { name: preview.via })}</span>}
+            </p>
+          )}
+          <div className="flex items-center justify-between text-[13px]">
+            <span className="text-muted">{t('{n} of {total} selected', { n: xpick.size, total: preview.configs.length })}</span>
+            <button type="button" className="text-accent-ink hover:underline" onClick={() => setXpick(allPicked ? new Set() : new Set(preview.configs.map((x) => x.key)))}>{allPicked ? t('Select none') : t('Select all')}</button>
+          </div>
+          <div className="rounded-2xl border border-line divide-y divide-line max-h-72 overflow-y-auto">
+            {preview.configs.map((x) => (
+              <div key={x.key} className="px-4 py-2.5">
+                <Checkbox className="w-full" checked={xpick.has(x.key)}
+                  onChange={(v) => { const st = new Set(xpick); if (v) st.add(x.key); else st.delete(x.key); setXpick(st) }}
+                  label={<span className="flex flex-1 items-center gap-2 min-w-0"><Flag cc={x.country} size={16} /><span className="font-medium truncate" dir="auto">{x.label}</span><span className="ms-auto text-[12px] text-muted shrink-0" dir="ltr">{x.summary}</span></span>} />
+              </div>
+            ))}
+          </div>
+          {preview.unusable.length > 0 && (
+            <More title={t('{n} configs cannot be tested', { n: preview.unusable.length })}>
+              <ul className="space-y-1 text-[12.5px]">
+                {preview.unusable.map((u, i) => <li key={i} className="flex gap-2"><span className="font-medium shrink-0" dir="auto">{u.name}</span><span className="text-muted" dir="auto">{u.error}</span></li>)}
+              </ul>
+            </More>
+          )}
+          {isLinkSub && <Checkbox checked={xlater} onChange={setXlater} label={t('Also add configs that appear in the subscription later')} />}
+        </>
+      )}
+      <More title={t('Test address')}>
+        <Field label={t('Fetched through each config')} htmlFor="tu2" help={t('Empty: {url}', { url: 'https://www.gstatic.com/generate_204' })}>
+          <Input id="tu2" dir="ltr" type="url" className="font-mono" value={c.testUrl ?? ''} onChange={(e) => cfg('testUrl', e.target.value)} placeholder="https://www.gstatic.com/generate_204" />
+        </Field>
+      </More>
+    </div>
+  )
+  const subStep = (
+    <div className="space-y-5">
+      <div>
+        <h2 className="font-display text-xl font-semibold">{t('Choose the configs')}</h2>
+        <p className="text-sm text-muted mt-1">{t('Each ticked config becomes a monitor, connected through Xray every {d}.', { d: duration(d.interval) })}</p>
+      </div>
+      {subList}
+    </div>
+  )
+
   const counts = { bp: found?.backpack?.tunnels.length ?? 0, kz: found?.kariz?.tunnels.length ?? 0 }
   const serverStep = (
     <div className="space-y-5">
@@ -883,16 +1152,23 @@ export default function MonitorForm({ mode }: { mode: 'add' | 'edit' | 'clone' }
               </div>
             </div>
           ) : (
-            <div className="space-y-3">
+            d.type === 'xray' ? (
+              <div className="space-y-4">
+                <p className="flex items-center gap-2 font-medium text-up"><CircleCheck className="size-5" />{t('Connected — the tests will run from {name}.', { name: srv.name.trim() })}</p>
+                {xsub && subList}
+              </div>
+            ) : <div className="space-y-3">
               <p className="flex items-center gap-2 font-medium text-up"><CircleCheck className="size-5" />{t('Connected — {bp} BackPack and {kz} Kariz tunnels found.', counts)}</p>
               {tunnelKeys(found).length > 0 && (
                 <div className="rounded-2xl border border-line divide-y divide-line max-h-60 overflow-y-auto">
                   {(['backpack', 'kariz'] as const).flatMap((src) => (found[src]?.tunnels ?? []).map((tn) => {
                     const k = `${src}/${tn.name}`
                     return (
-                      <Checkbox key={k} className="px-4 py-2.5" checked={pick.has(k)}
-                        onChange={(v) => { const s = new Set(pick); if (v) s.add(k); else s.delete(k); setPick(s) }}
-                        label={<span className="inline-flex flex-wrap items-center gap-2"><SourceBadge source={src} /><span className="font-medium" dir="auto">{tn.name}</span><span className="text-[12px] text-muted" dir="ltr">{(tn.carrier || tn.transport || '').toUpperCase()} · {tn.state}</span></span>} />
+                      <div key={k} className="px-4 py-2.5">
+                        <Checkbox className="w-full" checked={pick.has(k)}
+                          onChange={(v) => { const s = new Set(pick); if (v) s.add(k); else s.delete(k); setPick(s) }}
+                          label={<span className="inline-flex flex-wrap items-center gap-2"><SourceBadge source={src} /><span className="font-medium" dir="auto">{tn.name}</span><span className="text-[12px] text-muted" dir="ltr">{(tn.carrier || tn.transport || '').toUpperCase()} · {tn.state}</span></span>} />
+                      </div>
                     )
                   }))}
                 </div>
@@ -905,7 +1181,8 @@ export default function MonitorForm({ mode }: { mode: 'add' | 'edit' | 'clone' }
     </div>
   )
 
-  const content = [typeStep, detailsStep, alertsStep, serverFlow ? serverStep : finishStep][step]
+  const content = [typeStep, detailsStep, alertsStep, serverFlow ? serverStep : xsub ? subStep : finishStep][step]
+  const xReady = !xsub || (!!preview && xpick.size > 0)
   const back = mode === 'add' ? '/dashboard' : `/dashboard/${id}`
 
   return (
@@ -948,8 +1225,9 @@ export default function MonitorForm({ mode }: { mode: 'add' | 'edit' | 'clone' }
               serverFlow ? (
                 !created ? <Button type="submit" variant="primary" loading={busy} icon={<Server className="size-4" />}>{t('Create server')}</Button>
                   : !found ? <Button type="button" variant="primary" disabled icon={<Spinner className="size-4" />}>{t('Waiting for the server…')}</Button>
-                    : <Button type="submit" variant="primary" loading={busy} icon={<Play className="size-4" />}>{t('Start monitoring')}</Button>
-              ) : <Button type="submit" variant="primary" loading={busy} icon={<Save className="size-4" />}>{mode === 'edit' ? t('Save changes') : t('Create monitor')}</Button>
+                    : <Button type="submit" variant="primary" loading={busy} disabled={!xReady} icon={<Play className="size-4" />}>{t('Start monitoring')}</Button>
+              ) : xsub ? <Button type="submit" variant="primary" loading={busy} disabled={!xReady} icon={<Play className="size-4" />}>{t('Start monitoring')} {xpick.size ? n(xpick.size) : ''}</Button>
+                : <Button type="submit" variant="primary" loading={busy} icon={<Save className="size-4" />}>{mode === 'edit' ? t('Save changes') : t('Create monitor')}</Button>
             )}
           </div>
         </div>

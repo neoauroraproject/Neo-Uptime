@@ -40,6 +40,7 @@ const (
 	TypeUDP          = "udp"
 	TypeWebSocket    = "websocket"
 	TypeTLS          = "tls"
+	TypeXray         = "xray" // a V2Ray/Xray config, tested through a real Xray core
 )
 
 // KnownType reports whether t is a monitor type this build can run.
@@ -48,7 +49,7 @@ func KnownType(t string) bool {
 	case TypeHTTP, TypeKeyword, TypeJSONQuery, TypeTCP, TypePing, TypeDNS, TypePush, TypeGroup,
 		TypeDocker, TypePostgres, TypeMySQL, TypeRedis, TypeBackpackTun, TypeBackpackHost,
 		TypeAgent, TypeAgentTunnel, TypeSMTP, TypeMongo, TypeMSSQL, TypeMQTT, TypeGRPC, TypeRadius,
-		TypeSNMP, TypeSteam, TypeKafka, TypeUDP, TypeWebSocket, TypeTLS:
+		TypeSNMP, TypeSteam, TypeKafka, TypeUDP, TypeWebSocket, TypeTLS, TypeXray:
 		return true
 	}
 	return false
@@ -76,6 +77,10 @@ type Result struct {
 	Tunnel   *backpack.Tunnel
 	System   *backpack.System
 	Agent    *AgentInfo
+	Xray     *XrayInfo
+	// Skip records nothing: the result is not in yet (a test running on
+	// another server).
+	Skip bool
 }
 
 func up(msg string, ping time.Duration) Result {
@@ -127,4 +132,5 @@ var checkers = map[string]Checker{
 	TypeUDP:          checkUDP,
 	TypeWebSocket:    checkWebSocket,
 	TypeTLS:          checkTLS,
+	TypeXray:         checkXray,
 }

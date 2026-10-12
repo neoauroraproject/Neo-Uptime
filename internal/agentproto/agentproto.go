@@ -23,6 +23,60 @@ type Report struct {
 
 	Backpack *Source `json:"backpack,omitempty"`
 	Kariz    *Source `json:"kariz,omitempty"`
+
+	// Caps lists what this agent can do beyond reporting, e.g. "xray".
+	Caps []string `json:"caps,omitempty"`
+	// Probes holds the latest result of each recurring test the server asked for.
+	Probes []ProbeResult `json:"probes,omitempty"`
+	// Jobs holds the results of one-off jobs since the last report.
+	Jobs []JobResult `json:"jobs,omitempty"`
+	// Early marks a report sent ahead of time to deliver results; the server
+	// takes the results and leaves the rest for the regular report.
+	Early bool `json:"early,omitempty"`
+}
+
+// CapXray means the agent tests V2Ray/Xray configs with a built-in Xray core.
+const CapXray = "xray"
+
+// Probe is a test the agent runs again and again, from where it is: today a
+// V2Ray/Xray config tested through a real Xray core.
+type Probe struct {
+	ID      int64  `json:"id"` // the monitor
+	Kind    string `json:"kind"`
+	Link    string `json:"link"`
+	URL     string `json:"url,omitempty"` // fetched through the config
+	Every   int    `json:"every"`         // seconds
+	Timeout int    `json:"timeout"`       // seconds
+}
+
+// ProbeResult is one run of a probe.
+type ProbeResult struct {
+	ID      int64   `json:"id"`
+	At      int64   `json:"at"` // unix ms, agent clock
+	OK      bool    `json:"ok"`
+	Ping    float64 `json:"ping,omitempty"`    // ms, the round trip once connected
+	Connect float64 `json:"connect,omitempty"` // ms, the first request
+	Msg     string  `json:"msg,omitempty"`
+}
+
+// Job is a one-off request: fetch a subscription, or test a config now.
+type Job struct {
+	ID      string `json:"id"`
+	Kind    string `json:"kind"` // fetch | test
+	URL     string `json:"url,omitempty"`
+	Link    string `json:"link,omitempty"`
+	Timeout int    `json:"timeout,omitempty"`
+}
+
+// JobResult answers a job.
+type JobResult struct {
+	ID       string  `json:"id"`
+	Error    string  `json:"error,omitempty"`
+	Body     string  `json:"body,omitempty"`     // fetch: the response body
+	Userinfo string  `json:"userinfo,omitempty"` // fetch: subscription-userinfo
+	Title    string  `json:"title,omitempty"`    // fetch: profile-title
+	Ping     float64 `json:"ping,omitempty"`     // test
+	Connect  float64 `json:"connect,omitempty"`  // test
 }
 
 // System describes the host.
@@ -67,4 +121,7 @@ type Ack struct {
 	Interval int    `json:"interval,omitempty"` // the server may ask for another pace
 	Name     string `json:"name,omitempty"`
 	Error    string `json:"error,omitempty"`
+	// Probes is the full set of recurring tests; others stop.
+	Probes []Probe `json:"probes,omitempty"`
+	Jobs   []Job   `json:"jobs,omitempty"`
 }

@@ -25,6 +25,7 @@ type backupFile struct {
 	Incidents     []*store.Incident      `json:"incidents"`
 	Maintenances  []*store.Maintenance   `json:"maintenances"`
 	Uploads       []*store.Upload        `json:"uploads,omitempty"`
+	Subscriptions []*store.Subscription  `json:"subscriptions,omitempty"`
 }
 
 const backupFormat = "neo-uptime-backup/1"
@@ -47,6 +48,10 @@ func (s *Server) handleExport(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if b.Monitors, err = s.db.ListMonitors(ctx); err != nil {
+		writeStoreErr(w, err)
+		return
+	}
+	if b.Subscriptions, err = s.db.ListSubscriptions(ctx); err != nil {
 		writeStoreErr(w, err)
 		return
 	}
@@ -124,6 +129,10 @@ func (s *Server) wipe(ctx context.Context) error {
 	pages, _ := s.db.ListStatusPages(ctx)
 	for _, p := range pages {
 		_ = s.db.DeleteStatusPage(ctx, p.ID)
+	}
+	subs, _ := s.db.ListSubscriptions(ctx)
+	for _, x := range subs {
+		_ = s.db.DeleteSubscription(ctx, x.ID)
 	}
 	notifs, _ := s.db.ListNotifications(ctx)
 	for _, n := range notifs {
@@ -205,6 +214,22 @@ func (s *Server) restore(ctx context.Context, b *backupFile) (map[string]int, er
 		counts["backpackPanels"]++
 	}
 
+	subIDs := map[int64]int64{}
+	subGroups := map[int64]int64{} // new subscription id -> old group monitor id
+	for _, x := range b.Subscriptions {
+		old := x.ID
+		x.ID = 0
+		if x.GroupMonitorID != nil {
+			subGroups[old] = *x.GroupMonitorID
+			x.GroupMonitorID = nil
+		}
+		if err := s.db.SaveSubscription(ctx, x); err != nil {
+			return counts, fmt.Errorf("subscription %s: %w", x.Name, err)
+		}
+		subIDs[old] = x.ID
+		counts["subscriptions"]++
+	}
+
 	// Monitors in two passes: create them all, then fix parents, since a child
 	// may come before its group in the file.
 	monIDs := map[int64]int64{}
@@ -218,6 +243,9 @@ func (s *Server) restore(ctx context.Context, b *backupFile) (map[string]int, er
 		m.ID, m.ParentID = 0, nil
 		if m.Config.PanelID != 0 {
 			m.Config.PanelID = panelIDs[m.Config.PanelID]
+		}
+		if m.Config.SubscriptionID != 0 {
+			m.Config.SubscriptionID = subIDs[m.Config.SubscriptionID]
 		}
 		var tags []store.MonitorTag
 		for _, t := range m.Tags {
@@ -268,6 +296,14 @@ func (s *Server) restore(ctx context.Context, b *backupFile) (map[string]int, er
 					p.GroupMonitorID = &ng
 					_ = s.db.SavePanel(ctx, p)
 				}
+			}
+		}
+	}
+	for oldSub, oldGroup := range subGroups {
+		if ng, ok := monIDs[oldGroup]; ok {
+			if x, err := s.db.GetSubscription(ctx, subIDs[oldSub]); err == nil {
+				x.GroupMonitorID = &ng
+				_ = s.db.SaveSubscription(ctx, x)
 			}
 		}
 	}

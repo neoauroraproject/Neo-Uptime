@@ -29,10 +29,11 @@ type AgentState struct {
 type AgentHub struct {
 	mu sync.RWMutex
 	m  map[int64]*AgentState
+	x  *xrayHub
 }
 
 // NewAgentHub returns an empty hub.
-func NewAgentHub() *AgentHub { return &AgentHub{m: map[int64]*AgentState{}} }
+func NewAgentHub() *AgentHub { return &AgentHub{m: map[int64]*AgentState{}, x: newXrayHub()} }
 
 // Put stores a report.
 func (h *AgentHub) Put(id int64, st *AgentState) {
@@ -123,6 +124,16 @@ func agentStale(a *store.Agent, st *AgentState) (time.Duration, bool) {
 	return age, age > limit
 }
 
+// processStart is when this process began. Agents report within their
+// interval of it; until then "no report yet" says nothing about them.
+var processStart = time.Now()
+
+// awaitingFirstReport is true while a freshly started panel has not heard
+// from an agent yet: no check records anything until the agent reports.
+func awaitingFirstReport(st *AgentState) bool {
+	return st == nil && time.Since(processStart) < 90*time.Second
+}
+
 func agentGone(a *store.Agent, st *AgentState, age time.Duration) string {
 	if st == nil {
 		if a.LastSeen > 0 {
@@ -139,6 +150,9 @@ func checkAgent(ctx context.Context, m *store.Monitor, env *Env) Result {
 		return down("this agent no longer exists")
 	}
 	st := env.Agents.Get(a.ID)
+	if awaitingFirstReport(st) {
+		return Result{Skip: true}
+	}
 	if age, stale := agentStale(a, st); stale {
 		return down(agentGone(a, st, age))
 	}
@@ -173,6 +187,9 @@ func checkAgentTunnel(ctx context.Context, m *store.Monitor, env *Env) Result {
 		return down("this agent no longer exists")
 	}
 	st := env.Agents.Get(a.ID)
+	if awaitingFirstReport(st) {
+		return Result{Skip: true}
+	}
 	if age, stale := agentStale(a, st); stale {
 		return down(agentGone(a, st, age))
 	}
@@ -235,8 +252,13 @@ func tunnelResult(t *backpack.Tunnel, serviceDownIsDown bool) Result {
 // ---------- ingest & import ----------
 
 // IngestAgentReport stores a report and re-checks the agent's monitors at
-// once, so a tunnel that dropped shows within a report, not an interval.
-func (mg *Manager) IngestAgentReport(ctx context.Context, a *store.Agent, r *agentproto.Report, ip string) {
+// once, so a tunnel that dropped shows within a report, not an interval. It
+// returns the tests the agent should run.
+func (mg *Manager) IngestAgentReport(ctx context.Context, a *store.Agent, r *agentproto.Report, ip string) AgentReply {
+	if r.Early {
+		// Only test results: the full report stays as it was.
+		return mg.agentReply(a, r)
+	}
 	mg.env.Agents.Put(a.ID, &AgentState{Report: r, ReceivedAt: time.Now(), IP: ip})
 	mg.db.TouchAgent(ctx, a.ID, ip, r.AgentVersion, r.System.Hostname)
 
@@ -261,6 +283,7 @@ func (mg *Manager) IngestAgentReport(ctx context.Context, a *store.Agent, r *age
 		}()
 	}
 	mg.pub.Publish("agent", map[string]any{"agentId": a.ID})
+	return mg.agentReply(a, r)
 }
 
 func agentKey(source, name string) string { return source + "\x00" + name }

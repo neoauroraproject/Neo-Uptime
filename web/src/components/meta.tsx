@@ -1,6 +1,6 @@
 import {
   ArrowLeftRight, Box, Braces, Cable, Container, Cpu, Database, Gamepad2, Globe, Layers, LockKeyhole, Mail, Network,
-  Radar, Radio, RadioTower, Router, Rows3, Search, Server, ShieldCheck, TextSearch, Waypoints, Webhook, Zap,
+  Radar, Radio, RadioTower, Rocket, Router, Rows3, Search, Server, ShieldCheck, TextSearch, Waypoints, Webhook, Zap,
 } from 'lucide-react'
 import type { ReactNode } from 'react'
 import type { MonitorType } from '../lib/types'
@@ -18,6 +18,7 @@ export const typeInfo: Record<MonitorType, { label: string; icon: ReactNode; gro
   websocket: { label: 'WebSocket', icon: <ArrowLeftRight />, group: 'General', help: 'Checks that a ws:// or wss:// endpoint accepts the upgrade.' },
   tls: { label: 'SSL certificate', icon: <LockKeyhole />, group: 'General', help: 'Goes down when a certificate is invalid or about to expire.' },
   agent: { label: 'Server (agent)', icon: <Cpu />, group: 'Servers & tunnels', help: 'A server running neo-uptime-agent: online state, CPU, memory, disk and traffic.' },
+  xray: { label: 'V2Ray config', icon: <Rocket />, group: 'Servers & tunnels', help: 'VLESS, VMess, Trojan, Shadowsocks or Hysteria2 — connected for real through an Xray core, from this panel or one of your servers.' },
   'agent-tunnel': { label: 'Tunnel via agent', icon: <Cable />, group: 'Servers & tunnels', help: 'A BackPack or Kariz tunnel read by the agent on its server — no panel or token needed there.' },
   'backpack-tunnel': { label: 'BackPack tunnel (panel API)', icon: <Cable />, group: 'Servers & tunnels', help: 'Watches one tunnel through its BackPack panel: state, latency and traffic.' },
   'backpack-panel': { label: 'BackPack panel', icon: <Server />, group: 'Servers & tunnels', help: 'Checks the panel answers and reports its host CPU and memory.' },
