@@ -120,7 +120,7 @@ func statusHostPath(p, slug string) bool {
 		return true
 	case strings.HasPrefix(p, "/api/badge/"), strings.HasPrefix(p, "/api/v1/status/"), p == "/api/health":
 		return true
-	case p == "/api/agent/report", strings.HasPrefix(p, "/api/push/"):
+	case p == "/api/agent/report", p == "/api/agent/binary", strings.HasPrefix(p, "/api/push/"):
 		// Machine endpoints with their own tokens: agents and push scripts
 		// may be pointed at any of this server's addresses.
 		return true

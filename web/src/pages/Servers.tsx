@@ -1,12 +1,12 @@
 import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { ArrowDown, ArrowUp, CircleCheck, Cpu, Download, Ellipsis, HardDrive, KeyRound, LoaderCircle, MemoryStick, Pencil, Plus, RefreshCw, Route as RouteIcon, Server, Terminal, Trash2 } from 'lucide-react'
+import { ArrowDown, ArrowUp, CircleArrowUp, CircleCheck, Cpu, Download, Ellipsis, HardDrive, KeyRound, LoaderCircle, MemoryStick, Pencil, Plus, RefreshCw, Route as RouteIcon, Server, Terminal, Trash2 } from 'lucide-react'
 import { api } from '../lib/api'
 import { canEdit, useApp } from '../lib/store'
 import { bytes, clsx, duration, n, pct, rate, timeAgo } from '../lib/format'
 import { useT } from '../lib/i18n'
 import type { Agent, AgentAddresses, AgentSource } from '../lib/types'
-import { Alert, Button, Card, Checkbox, CopyButton, Empty, Field, IconButton, Input, Menu, Modal, Select, Skeleton, Switch, confirm, toast, useNow, Segmented } from '../components/ui'
+import { Alert, Button, Card, Checkbox, CopyButton, Empty, Field, IconButton, Input, Menu, Modal, Select, Skeleton, Switch, confirm, toast, useNow, Segmented, Badge, Spinner } from '../components/ui'
 import { CountryPicker, Flag, countryName } from '../components/flag'
 import { SourceBadge } from '../components/meta'
 import { TunnelBadges } from '../components/tunnel'
@@ -236,13 +236,28 @@ function TunnelsDialog({ agent, onClose }: { agent: Agent | null; onClose: () =>
   )
 }
 
+/** Whether an agent runs an older release than the panel ("v1.2.3" form). */
+export function versionBehind(agent: string | undefined, panel: string) {
+  const parse = (v?: string) => /^v(\d+)\.(\d+)\.(\d+)$/.exec(v ?? '')?.slice(1).map(Number)
+  const a = parse(agent)
+  const p = parse(panel)
+  if (!a || !p) return false
+  for (let i = 0; i < 3; i++) if (a[i] !== p[i]) return a[i] < p[i]
+  return false
+}
+
+type UpdateReply = { ok: boolean; manual?: boolean; error?: string; version?: string; already?: boolean }
+
 function ServerCard({ a, onEdit, onTunnels }: { a: Agent; onEdit: () => void; onTunnels: () => void }) {
   const t = useT()
   const role = useApp((s) => s.role)
   const now = useNow(10_000)
   const [token, setToken] = useState<{ install: string; addresses?: AgentAddresses } | null>(null)
-  const [move, setMove] = useState<{ install: string; addresses?: AgentAddresses } | null>(null)
+  const [move, setMove] = useState<{ install: string; addresses?: AgentAddresses; update?: boolean } | null>(null)
   const [checking, setChecking] = useState(false)
+  const [updating, setUpdating] = useState(false)
+  const panelVersion = useApp((st) => st.version)
+  const behind = !!a.lastSeen && versionBehind(a.version, panelVersion)
   const s = a.info?.system
   const memPct = s?.memTotal ? (100 * s.memUsed) / s.memTotal : 0
   const diskPct = s?.diskTotal ? (100 * s.diskUsed) / s.diskTotal : 0
@@ -265,6 +280,26 @@ function ServerCard({ a, onEdit, onTunnels }: { a: Agent; onEdit: () => void; on
   const changeAddress = async () => {
     const r = await api.get<{ install: string; addresses: AgentAddresses }>(`/api/agents/${a.id}`)
     setMove(r)
+  }
+  // The agent fetches the panel's release (from the panel itself), swaps
+  // its binary and restarts. Agents before v1.3.1 need the command once.
+  const updateAgent = async () => {
+    setUpdating(true)
+    try {
+      const r = await api.post<UpdateReply>(`/api/agents/${a.id}/update`)
+      if (r.manual) {
+        const m = await api.get<{ install: string; addresses: AgentAddresses }>(`/api/agents/${a.id}`)
+        setMove({ ...m, update: true })
+        return
+      }
+      if (r.already) toast.success(t('{name} is up to date', { name: a.name }))
+      else toast.success(t('{name} updated to {v}', { name: a.name, v: r.version ?? '' }), t('The agent restarts and reports again in a few seconds.'))
+      setTimeout(() => useApp.getState().loadAgents().catch(() => {}), 6000)
+    } catch (e) {
+      toast.error(t('Update failed'), (e as Error).message)
+    } finally {
+      setUpdating(false)
+    }
   }
   const checkAgain = async () => {
     setChecking(true)
@@ -294,6 +329,7 @@ function ServerCard({ a, onEdit, onTunnels }: { a: Agent; onEdit: () => void; on
             { label: t('Tunnels on this server'), icon: <Download />, onClick: onTunnels },
             ...(role === 'admin' ? [
               { label: t('Edit'), icon: <Pencil />, onClick: onEdit },
+              { label: t('Update the agent'), icon: <CircleArrowUp />, onClick: updateAgent },
               { label: t('Change reporting address'), icon: <RouteIcon />, onClick: changeAddress },
               { label: t('New token & install command'), icon: <KeyRound />, onClick: regen },
               { divider: true, label: '' },
@@ -336,17 +372,27 @@ function ServerCard({ a, onEdit, onTunnels }: { a: Agent; onEdit: () => void; on
           {a.info?.kariz && <button onClick={onTunnels} className="inline-flex items-center gap-1.5 h-7 px-2.5 rounded-lg border border-line bg-surface-2 text-[12px] hover:border-line-strong"><SourceBadge source="kariz" /><span className="tnum" dir="ltr">{n(a.info.kariz.online)}/{n(a.info.kariz.tunnels)}</span></button>}
         </div>
       )}
-      <div className="flex items-center justify-between text-[12px] text-subtle mt-auto">
-        <span>{a.version ? `agent ${a.version}` : ''}</span>
+      <div className="flex items-center justify-between gap-2 text-[12px] text-subtle mt-auto">
+        <span className="inline-flex flex-wrap items-center gap-2">
+          {a.version && <span dir="ltr">agent {a.version}</span>}
+          {behind && (role === 'admin' ? (
+            <button type="button" onClick={updateAgent} disabled={updating} title={t('Update the agent on this server')}
+              className="inline-flex items-center gap-1 h-6 px-2 rounded-md bg-accent-soft text-accent-ink font-semibold hover:brightness-95 disabled:opacity-60">
+              {updating ? <Spinner className="size-3" /> : <CircleArrowUp className="size-3.5" />}{updating ? t('Updating…') : t('Update to {v}', { v: panelVersion })}
+            </button>
+          ) : <Badge tone="pending">{t('Update available')}</Badge>)}
+        </span>
         <span>{a.lastSeen ? t('last report {ago}', { ago: timeAgo(a.lastSeen * 1000, now) }) : ''}</span>
       </div>
       <Modal open={!!token} onClose={() => setToken(null)} title={t('New install command for {name}', { name: a.name })} footer={<Button variant="primary" onClick={() => setToken(null)}>{t('Done')}</Button>}>
         {token && <InstallBox command={token.install} addresses={token.addresses} />}
       </Modal>
-      <Modal open={!!move} onClose={() => setMove(null)} size="lg" title={t('Change reporting address of {name}', { name: a.name })} footer={<Button variant="primary" onClick={() => setMove(null)}>{t('Done')}</Button>}>
+      <Modal open={!!move} onClose={() => setMove(null)} size="lg" title={move?.update ? t('Update the agent on {name}', { name: a.name }) : t('Change reporting address of {name}', { name: a.name })} footer={<Button variant="primary" onClick={() => setMove(null)}>{t('Done')}</Button>}>
         {move && (
           <div className="space-y-3">
-            <p className="text-sm text-muted">{t('Run it on that server. The agent keeps its token, updates itself and reports to the new address.')}</p>
+            <p className="text-sm text-muted">{move.update
+              ? t('This agent is too old to update itself. Run this once on that server — it keeps its token and settings, and later updates work from here with one click.')
+              : t('Run it on that server. The agent keeps its token, updates itself and reports to the new address.')}</p>
             <InstallBox command={move.install} addresses={move.addresses} keepToken />
           </div>
         )}
@@ -371,6 +417,30 @@ export default function Servers() {
     return () => clearInterval(tm)
   }, [])
 
+  const panelVersion = useApp((st) => st.version)
+  const behind = agents.filter((a) => a.online && versionBehind(a.version, panelVersion))
+  const [updatingAll, setUpdatingAll] = useState(false)
+  const updateAll = async () => {
+    if (!(await confirm({ title: t('Update {n} agents to {v}?', { n: behind.length, v: panelVersion }), body: t('Each agent downloads the new version from this panel, checks it and restarts. Monitoring pauses for a few seconds per server.'), confirmLabel: t('Update') }))) return
+    setUpdatingAll(true)
+    let done = 0
+    const manual: string[] = []
+    const failed: string[] = []
+    for (const a of behind) {
+      try {
+        const r = await api.post<UpdateReply>(`/api/agents/${a.id}/update`)
+        if (r.manual) manual.push(a.name)
+        else done++
+      } catch {
+        failed.push(a.name)
+      }
+    }
+    setUpdatingAll(false)
+    if (done) toast.success(t('{n} agents updated', { n: done }), t('They restart and report again in a few seconds.'))
+    if (manual.length) toast.info(t('Update by hand once: {names}', { names: manual.join('، ') }), t('Their agents are too old to update themselves — use “Update the agent” on their cards.'))
+    if (failed.length) toast.error(t('Update failed: {names}', { names: failed.join('، ') }))
+    setTimeout(() => useApp.getState().loadAgents().catch(() => {}), 6000)
+  }
   const online = agents.filter((a) => a.online).length
   return (
     <div className="p-4 sm:p-6 lg:p-8 space-y-6 max-w-[1600px]">
@@ -379,7 +449,12 @@ export default function Servers() {
           <h1 className="font-display text-[28px] font-semibold tracking-tight">{t('Servers')}</h1>
           <p className="text-sm text-muted mt-1">{t('Servers running neo-uptime-agent — their health, and their BackPack and Kariz tunnels, pushed here with a token.')}</p>
         </div>
-        {role === 'admin' && <Button variant="primary" icon={<Plus className="size-4" />} onClick={() => { setEdit(undefined); setOpen(true) }}>{t('Add a server')}</Button>}
+        <div className="flex flex-wrap gap-2">
+          {role === 'admin' && behind.length > 0 && (
+            <Button loading={updatingAll} icon={<CircleArrowUp className="size-4" />} onClick={updateAll}>{t('Update agents')} <span className="text-muted tnum">{n(behind.length)}</span></Button>
+          )}
+          {role === 'admin' && <Button variant="primary" icon={<Plus className="size-4" />} onClick={() => { setEdit(undefined); setOpen(true) }}>{t('Add a server')}</Button>}
+        </div>
       </div>
 
       {agents.length > 0 && (

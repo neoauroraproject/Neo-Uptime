@@ -1,3 +1,8 @@
+//go:build !race
+
+// Runs real Xray connections, which the race detector's checkptr mode
+// rejects inside Xray-core; CI runs it in a plain pass.
+
 package api
 
 import (

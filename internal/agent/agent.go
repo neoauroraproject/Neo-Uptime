@@ -15,6 +15,7 @@ import (
 	"net/http"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/neoauroraproject/Neo-Uptime/internal/agentproto"
@@ -48,6 +49,8 @@ type Agent struct {
 	mu      sync.Mutex
 	lastRTT time.Duration
 	good    int // index of the address that answered last
+
+	restart atomic.Bool // an update is in place: stop so systemd starts the new binary
 }
 
 // errRefused is a token problem: every address leads to the same Neo Uptime,
@@ -90,12 +93,14 @@ func New(cfg Config) *Agent {
 	}
 	tr := http.DefaultTransport.(*http.Transport).Clone()
 	tr.TLSClientConfig = &tls.Config{InsecureSkipVerify: cfg.Insecure} //nolint:gosec // operator's choice
-	return &Agent{
+	a := &Agent{
 		cfg:    cfg,
 		sys:    newSystemSampler(),
 		client: &http.Client{Transport: tr, Timeout: 25 * time.Second},
 		probe:  newProber(),
 	}
+	a.probe.agent = a
+	return a
 }
 
 // Collect builds one report.
@@ -200,7 +205,8 @@ func (a *Agent) sendTo(ctx context.Context, server string, body []byte) (*agentp
 	return &ack, nil
 }
 
-// Run reports until ctx ends.
+// Run reports until ctx ends, or until the agent has
+// updated itself: then it returns, and systemd starts the new binary.
 func (a *Agent) Run(ctx context.Context) {
 	log.Printf("neo-uptime-agent %s reporting to %s every %s", version.Version, strings.Join(a.Servers(), " or "), a.cfg.Interval)
 	go a.probe.loop(ctx)
@@ -232,6 +238,10 @@ func (a *Agent) Run(ctx context.Context) {
 				}
 			}
 			next = time.Now().Add(interval)
+			if a.restart.Load() {
+				log.Printf("updated — restarting into the new version")
+				return
+			}
 		case <-a.probe.wake:
 			// Test results are ready: send them now rather than at the next
 			// report. A short pause lets results that finish together share one.
@@ -247,6 +257,10 @@ func (a *Agent) Run(ctx context.Context) {
 				Interval: int(interval / time.Second), Early: true}
 			a.probe.attach(r)
 			_, _ = a.deliver(ctx, r)
+			if a.restart.Load() {
+				log.Printf("updated — restarting into the new version")
+				return
+			}
 		}
 	}
 }
@@ -260,6 +274,12 @@ func (a *Agent) deliver(ctx context.Context, r *agentproto.Report) (*agentproto.
 		return nil, err
 	}
 	a.probe.delivered(r.Jobs)
+	for _, j := range r.Jobs {
+		if j.Restart {
+			// The server knows the update worked; now make it real.
+			a.restart.Store(true)
+		}
+	}
 	a.probe.set(ack.Probes)
 	a.probe.add(ack.Jobs)
 	return ack, nil

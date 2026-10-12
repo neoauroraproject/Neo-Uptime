@@ -42,6 +42,7 @@ type Server struct {
 	port    int            // the panel's own port, for agent addresses
 	adsMu   sync.Mutex
 	ads     *ads.Service // nil until StartAds
+	binMu   sync.Mutex   // agent binaries being downloaded for updates
 }
 
 // SetPanelPort records the port the panel listens on.
@@ -77,6 +78,7 @@ func (s *Server) routes() {
 	m.HandleFunc("GET /metrics", s.need(roleViewer, s.handleMetrics))
 	m.HandleFunc("GET /robots.txt", s.handleRobots)
 	m.HandleFunc("POST /api/agent/report", s.handleAgentReport)
+	m.HandleFunc("GET /api/agent/binary", s.handleAgentBinary)
 	m.HandleFunc("GET /api/v1/status/{slug}", s.handleStatusV1)
 	m.HandleFunc("OPTIONS /api/v1/status/{slug}", s.handleStatusV1)
 	m.HandleFunc("GET /uploads/{name}", s.handleGetUpload)
@@ -180,6 +182,7 @@ func (s *Server) routes() {
 	m.HandleFunc("PUT /api/agents/{id}", s.admin(s.handleSaveAgent))
 	m.HandleFunc("DELETE /api/agents/{id}", s.admin(s.handleDeleteAgent))
 	m.HandleFunc("POST /api/agents/{id}/token", s.admin(s.handleAgentToken))
+	m.HandleFunc("POST /api/agents/{id}/update", s.admin(s.handleUpdateAgent))
 	m.HandleFunc("GET /api/https", s.admin(s.handleHTTPSStatus))
 	m.HandleFunc("POST /api/https/issue", s.admin(s.handleHTTPSIssue))
 

@@ -16,6 +16,7 @@ import (
 // subscription, test a config now). Results go back with the next report;
 // wake asks for that report early so nobody waits a whole interval.
 type prober struct {
+	agent  *Agent
 	client *http.Client
 	wake   chan struct{}
 	slots  chan struct{}
@@ -189,6 +190,12 @@ func (p *prober) runJob(j agentproto.Job) {
 			res.Error = err.Error()
 		} else {
 			res.Ping, res.Connect = ping, connect
+		}
+	case "update":
+		if err := p.agent.selfUpdate(ctx, j); err != nil {
+			res.Error = err.Error()
+		} else {
+			res.Restart = true
 		}
 	default:
 		res.Error = "this agent does not know job " + j.Kind

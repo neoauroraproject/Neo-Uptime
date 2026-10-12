@@ -154,6 +154,9 @@ func (h *xrayHub) forget(id int64) {
 	delete(h.asked, id)
 }
 
+// ErrAgentTooOld: the agent predates jobs and must be updated by hand once.
+var ErrAgentTooOld = errors.New("update it with the install command shown under Servers")
+
 // RunJob hands a one-off job to an agent and waits for its answer, which
 // comes with the agent's next report.
 func (mg *Manager) RunJob(ctx context.Context, agentID int64, job agentproto.Job) (agentproto.JobResult, error) {
@@ -166,7 +169,7 @@ func (mg *Manager) RunJob(ctx context.Context, agentID int64, job agentproto.Job
 		return agentproto.JobResult{}, fmt.Errorf("%s is not reporting — is neo-uptime-agent running there?", a.Name)
 	}
 	if !slices.Contains(st.Report.Caps, agentproto.CapXray) {
-		return agentproto.JobResult{}, fmt.Errorf("neo-uptime-agent on %s is too old for this — update it from Servers", a.Name)
+		return agentproto.JobResult{}, fmt.Errorf("neo-uptime-agent on %s is too old for this: %w", a.Name, ErrAgentTooOld)
 	}
 	b := make([]byte, 8)
 	_, _ = rand.Read(b)

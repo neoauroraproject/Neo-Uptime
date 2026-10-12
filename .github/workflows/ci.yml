@@ -28,5 +28,8 @@ jobs:
         run: go vet ./...
       - name: Test
         run: go test -race ./...
+      - name: Test real Xray connections
+        # Left out of the -race run: Xray-core trips its checkptr checks.
+        run: go test ./internal/xray/ ./internal/api/
       - name: Build
         run: CGO_ENABLED=0 go build ./cmd/neo-uptime

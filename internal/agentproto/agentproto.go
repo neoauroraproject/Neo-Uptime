@@ -59,13 +59,19 @@ type ProbeResult struct {
 	Msg     string  `json:"msg,omitempty"`
 }
 
-// Job is a one-off request: fetch a subscription, or test a config now.
+// Job is a one-off request: fetch a subscription, test a config now, or
+// update the agent itself.
 type Job struct {
 	ID      string `json:"id"`
-	Kind    string `json:"kind"` // fetch | test
+	Kind    string `json:"kind"` // fetch | test | update
 	URL     string `json:"url,omitempty"`
 	Link    string `json:"link,omitempty"`
 	Timeout int    `json:"timeout,omitempty"`
+	// update: the release to switch to, the asset's architecture
+	// (amd64 | arm64 | armv7) and the SHA-256 of its agent binary.
+	Version string `json:"version,omitempty"`
+	Arch    string `json:"arch,omitempty"`
+	SHA256  string `json:"sha256,omitempty"`
 }
 
 // JobResult answers a job.
@@ -77,6 +83,7 @@ type JobResult struct {
 	Title    string  `json:"title,omitempty"`    // fetch: profile-title
 	Ping     float64 `json:"ping,omitempty"`     // test
 	Connect  float64 `json:"connect,omitempty"`  // test
+	Restart  bool    `json:"restart,omitempty"`  // update: done; the agent restarts into it
 }
 
 // System describes the host.

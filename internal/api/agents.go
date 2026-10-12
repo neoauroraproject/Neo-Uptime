@@ -31,22 +31,11 @@ func normCountry(c string) string {
 
 // handleAgentReport receives a report from neo-uptime-agent.
 func (s *Server) handleAgentReport(w http.ResponseWriter, r *http.Request) {
+	a, ok := s.agentFromToken(w, r)
+	if !ok {
+		return
+	}
 	ip := s.clientIP(r)
-	if blocked, _ := s.limiter.Blocked(ip); blocked {
-		writeStatus(w, http.StatusTooManyRequests, agentproto.Ack{Error: "too many failed attempts"})
-		return
-	}
-	token := bearer(r)
-	if token == "" {
-		writeStatus(w, http.StatusUnauthorized, agentproto.Ack{Error: "missing token"})
-		return
-	}
-	a, err := s.db.GetAgentByTokenHash(r.Context(), auth.HashToken(token))
-	if err != nil {
-		s.limiter.Fail(ip)
-		writeStatus(w, http.StatusUnauthorized, agentproto.Ack{Error: "unknown agent token"})
-		return
-	}
 	var rep agentproto.Report
 	if err := json.NewDecoder(io.LimitReader(r.Body, 4<<20)).Decode(&rep); err != nil {
 		writeStatus(w, http.StatusBadRequest, agentproto.Ack{Error: "invalid report: " + err.Error()})

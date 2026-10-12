@@ -12,6 +12,7 @@ import (
 	"net"
 	"net/http"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/xtls/xray-core/app/proxyman"
@@ -77,6 +78,25 @@ func (quiet) Handle(xlog.Message) {}
 // tests caps how many configs are tested at once in this process.
 var tests = make(chan struct{}, 8)
 
+// startMu: starting an Xray instance sets process-wide state (its system
+// dialer), so instances come up one at a time; they then run side by side.
+var startMu sync.Mutex
+
+// Start builds and starts an Xray instance.
+func Start(cfg *core.Config) (*core.Instance, error) {
+	startMu.Lock()
+	defer startMu.Unlock()
+	inst, err := core.New(cfg)
+	if err != nil {
+		return nil, err
+	}
+	if err := inst.Start(); err != nil {
+		inst.Close()
+		return nil, err
+	}
+	return inst, nil
+}
+
 // Test connects through the link with a real Xray core and fetches testURL.
 func Test(ctx context.Context, l *Link, testURL string) (*Result, error) {
 	if testURL == "" {
@@ -92,12 +112,9 @@ func Test(ctx context.Context, l *Link, testURL string) (*Result, error) {
 	if err != nil {
 		return nil, fmt.Errorf("xray rejected the config: %w", err)
 	}
-	inst, err := core.New(cfg)
+	inst, err := Start(cfg)
 	if err != nil {
-		return nil, fmt.Errorf("xray rejected the config: %w", err)
-	}
-	if err := inst.Start(); err != nil {
-		return nil, fmt.Errorf("xray could not start: %w", err)
+		return nil, fmt.Errorf("xray could not start the config: %w", err)
 	}
 	defer inst.Close()
 
