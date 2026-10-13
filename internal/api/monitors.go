@@ -19,18 +19,19 @@ import (
 // monitorView is a monitor together with what is known about it right now.
 type monitorView struct {
 	*store.Monitor
-	Last        *store.Heartbeat   `json:"last"`
-	Uptime24    float64            `json:"uptime24"`
-	Uptime30    float64            `json:"uptime30"`
-	AvgPing24   float64            `json:"avgPing24"`
-	Cert        *monitor.CertInfo  `json:"cert,omitempty"`
-	Agent       *monitor.AgentInfo `json:"agent,omitempty"`
-	Tunnel      *backpack.Tunnel   `json:"tunnel,omitempty"`
-	System      *backpack.System   `json:"system,omitempty"`
-	Xray        *monitor.XrayInfo  `json:"xray,omitempty"`
-	NextCheck   int64              `json:"nextCheck"`
-	Maintenance bool               `json:"maintenance"`
-	Target      string             `json:"target"`
+	Last        *store.Heartbeat     `json:"last"`
+	Uptime24    float64              `json:"uptime24"`
+	Uptime30    float64              `json:"uptime30"`
+	AvgPing24   float64              `json:"avgPing24"`
+	Cert        *monitor.CertInfo    `json:"cert,omitempty"`
+	Agent       *monitor.AgentInfo   `json:"agent,omitempty"`
+	Tunnel      *backpack.Tunnel     `json:"tunnel,omitempty"`
+	System      *backpack.System     `json:"system,omitempty"`
+	Xray        *monitor.XrayInfo    `json:"xray,omitempty"`
+	Speed       *monitor.SpeedResult `json:"speed,omitempty"`
+	NextCheck   int64                `json:"nextCheck"`
+	Maintenance bool                 `json:"maintenance"`
+	Target      string               `json:"target"`
 }
 
 // redact hides credentials from read-only callers.
@@ -57,6 +58,7 @@ func (s *Server) views(ctx context.Context, list []*store.Monitor, who *caller) 
 		return nil, err
 	}
 	states := s.mgr.States()
+	speeds := s.mgr.Speeds(ctx)
 	out := make([]monitorView, 0, len(list))
 	for _, m := range list {
 		st := states[m.ID]
@@ -70,6 +72,7 @@ func (s *Server) views(ctx context.Context, list []*store.Monitor, who *caller) 
 			Uptime24: -1, Uptime30: -1, AvgPing24: -1,
 			Maintenance: m.Active && s.mgr.InMaintenance(m.ID),
 		}
+		v.Speed = speeds[m.ID]
 		// The config as it is now, with what its last test measured.
 		if v.Xray = monitor.XrayDetails(m); v.Xray != nil && st.Xray != nil {
 			v.Xray.Connect, v.Xray.From = st.Xray.Connect, st.Xray.From

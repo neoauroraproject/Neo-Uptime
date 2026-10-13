@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { Link } from 'react-router-dom'
-import { MapPin, Pencil, Play, TriangleAlert, Zap } from 'lucide-react'
+import { Gauge, MapPin, Pencil, Play, TriangleAlert, Zap } from 'lucide-react'
 import { api } from '../lib/api'
 import { canEdit, useApp } from '../lib/store'
 import { clsx, n, pct } from '../lib/format'
@@ -9,6 +9,7 @@ import type { MonitorView, XrayInfo } from '../lib/types'
 import { HeartbeatBar, Sparkline } from './charts'
 import { Badge, IconButton, Spinner, StatusPill, toast } from './ui'
 import { Flag } from './flag'
+import { SpeedDialog, SpeedLine } from './SpeedTest'
 
 const protoLabel: Record<string, string> = { vless: 'VLESS', vmess: 'VMess', trojan: 'Trojan', shadowsocks: 'Shadowsocks', hysteria: 'Hysteria2' }
 
@@ -36,6 +37,7 @@ export function ConfigCard({ m }: { m: MonitorView }) {
   const role = useApp((s) => s.role)
   const beats = useApp((s) => s.beats[m.id]) ?? []
   const [testing, setTesting] = useState(false)
+  const [speedOpen, setSpeedOpen] = useState(false)
   const x = m.xray
   const pings = beats.slice(-60).map((b) => (b.status === 1 ? b.ping : null))
   const gone = !!m.config.gone
@@ -83,6 +85,15 @@ export function ConfigCard({ m }: { m: MonitorView }) {
       {msg && !gone && (
         <p className="relative mx-5 mt-3 flex items-start gap-1.5 text-[12px] text-down"><TriangleAlert className="size-3.5 shrink-0 mt-0.5" /><span className="line-clamp-2" dir="auto">{msg}</span></p>
       )}
+      {!gone && (canEdit(role) || m.speed) && (
+        canEdit(role) ? (
+          <button type="button" onClick={() => setSpeedOpen(true)} className="relative mx-5 mt-3 -mb-1 flex items-center gap-1.5 self-start rounded-lg px-2 h-7 -ms-2 text-[12.5px] text-muted hover:text-fg hover:bg-surface-2/70">
+            <Gauge className="size-3.5 shrink-0" />{m.speed ? <SpeedLine s={m.speed} /> : t('Speed test')}
+          </button>
+        ) : (
+          <p className="relative mx-5 mt-3 flex items-center gap-1.5 text-[12.5px] text-muted"><Gauge className="size-3.5 shrink-0" />{m.speed && <SpeedLine s={m.speed} />}</p>
+        )
+      )}
       <div className="relative mt-4 border-t border-line px-5 py-3.5 space-y-3 bg-surface/60">
         <HeartbeatBar beats={beats} height={18} barWidth={4} gap={2} maxBeats={60} />
         <div className="flex items-center justify-between gap-3 text-[12.5px]">
@@ -99,6 +110,7 @@ export function ConfigCard({ m }: { m: MonitorView }) {
           </div>
         </div>
       </div>
+      {canEdit(role) && <SpeedDialog m={m} open={speedOpen} onClose={() => setSpeedOpen(false)} />}
     </article>
   )
 }
@@ -108,6 +120,7 @@ export function XrayDetails({ m }: { m: MonitorView }) {
   const t = useT()
   const role = useApp((s) => s.role)
   const [testing, setTesting] = useState(false)
+  const [speedOpen, setSpeedOpen] = useState(false)
   if (!m.xray) return null
   const x = m.xray
   return (
@@ -119,11 +132,18 @@ export function XrayDetails({ m }: { m: MonitorView }) {
         {x.connect ? <span className="inline-flex items-center gap-1.5 text-[13px] text-muted"><Zap className="size-3.5" />{t('connects in {ms} ms', { ms: n(Math.round(x.connect)) })}</span> : null}
       </div>
       {canEdit(role) && (
+        <div className="flex flex-wrap items-center gap-2">
+          {m.speed && <span className="text-[13px] text-muted"><SpeedLine s={m.speed} /></span>}
+          <button type="button" onClick={() => setSpeedOpen(true)} className="inline-flex items-center gap-1.5 h-8 px-3 rounded-lg border border-line text-[13px] font-medium hover:bg-surface-2">
+            <Gauge className="size-3.5" />{t('Speed test')}
+          </button>
         <button type="button" disabled={testing} onClick={async () => { setTesting(true); try { await testNow(m, t) } catch (e) { toast.error(t('Test failed'), (e as Error).message) } finally { setTesting(false) } }}
           className="inline-flex items-center gap-1.5 h-8 px-3 rounded-lg border border-line text-[13px] font-medium hover:bg-surface-2 disabled:opacity-60">
           {testing ? <Spinner className="size-3.5" /> : <Play className="size-3.5" />}{t('Test now')}
         </button>
+        </div>
       )}
+      {canEdit(role) && <SpeedDialog m={m} open={speedOpen} onClose={() => setSpeedOpen(false)} />}
     </div>
   )
 }

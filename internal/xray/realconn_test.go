@@ -191,3 +191,61 @@ func selfSigned(t *testing.T) (certPEM, keyPEM []byte) {
 	kb, _ := x509.MarshalECPrivateKey(key)
 	return pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: der}), pem.EncodeToMemory(&pem.Block{Type: "EC PRIVATE KEY", Bytes: kb})
 }
+
+// A speed test through a config moves data both ways and measures it.
+func TestSpeedThroughConfig(t *testing.T) {
+	zero := make([]byte, 64<<10)
+	target := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/down":
+			if r.URL.Query().Get("bytes") == "1" {
+				_, _ = w.Write([]byte("x"))
+				return
+			}
+			for { // as much as the client takes
+				if _, err := w.Write(zero); err != nil {
+					return
+				}
+			}
+		case "/up":
+			_, _ = io.Copy(io.Discard, r.Body)
+		}
+	}))
+	defer target.Close()
+	oldServers, oldWarm, oldDown, oldUp := speedServers, speedWarm, speedDownFor, speedUpFor
+	t.Cleanup(func() { speedServers, speedWarm, speedDownFor, speedUpFor = oldServers, oldWarm, oldDown, oldUp })
+	speedServers = speedServers[:1]
+	speedServers[0].name = "local"
+	speedServers[0].down = func(n int64) string { return fmt.Sprintf("%s/down?bytes=%d", target.URL, n) }
+	speedServers[0].up = target.URL + "/up"
+	speedWarm, speedDownFor, speedUpFor = 300*time.Millisecond, 2*time.Second, 2*time.Second
+
+	const id = "b831381d-6324-4d53-ad4f-8cda48b30811"
+	port := freePorts(t, 1)[0]
+	srv := startServer(t, []map[string]any{{"listen": "127.0.0.1", "port": port, "protocol": "vless",
+		"settings": map[string]any{"clients": []any{map[string]any{"id": id}}, "decryption": "none"}}})
+	defer srv.Close()
+
+	l, err := Parse(fmt.Sprintf("vless://%s@127.0.0.1:%d?type=tcp#speed", id, port))
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 40*time.Second)
+	defer cancel()
+	sp, err := MeasureSpeed(ctx, l)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if sp.Down < 5 || sp.Up < 5 || sp.Ping < 0 || sp.Bytes < 1<<20 || sp.Server != "local" || sp.UpError != "" {
+		t.Fatalf("speed: %+v", sp)
+	}
+	t.Logf("down %.0f Mbps, up %.0f Mbps, ping %.1f ms, %d MB moved", sp.Down, sp.Up, sp.Ping, sp.Bytes>>20)
+
+	// A config that does not work says so, with the reason.
+	bad, _ := Parse(fmt.Sprintf("vless://00000000-0000-4000-8000-000000000000@127.0.0.1:%d?type=tcp#bad", port))
+	if _, err := MeasureSpeed(ctx, bad); err == nil {
+		t.Fatal("a wrong id must not measure a speed")
+	} else {
+		t.Log(err)
+	}
+}

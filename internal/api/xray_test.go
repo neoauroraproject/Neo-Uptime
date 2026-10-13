@@ -226,3 +226,75 @@ func TestSubscriptionsAndAgentTests(t *testing.T) {
 		t.Fatalf("monitors left behind: %v", d["monitors"])
 	}
 }
+
+// A speed test of a config, from the panel and from a server, is kept with
+// the monitor.
+func TestSpeedTestOfConfig(t *testing.T) {
+	h := newHarness(t)
+	h.do("POST", "/api/auth/setup", `{"username":"admin","password":"long-enough-pw"}`, true)
+	zero := make([]byte, 64<<10)
+	speed := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/__down":
+			if r.URL.Query().Get("bytes") == "1" {
+				_, _ = w.Write([]byte("x"))
+				return
+			}
+			for {
+				if _, err := w.Write(zero); err != nil {
+					return
+				}
+			}
+		case "/__up":
+			_, _ = io.Copy(io.Discard, r.Body)
+		}
+	}))
+	defer speed.Close()
+	t.Setenv("NEO_UPTIME_SPEED_URL", speed.URL)
+	port := vlessServer(t)
+	link := fmt.Sprintf("vless://%s@127.0.0.1:%d?type=tcp&security=none#Speedy", testUUID, port)
+	_, mon := h.do("POST", "/api/monitors", fmt.Sprintf(`{"name":"Speedy","type":"xray","interval":300,"config":{"link":%q}}`, link), true)
+	id := int(mon["id"].(float64))
+	view := func() map[string]any {
+		_, m := h.do("GET", fmt.Sprintf("/api/monitors/%d", id), "", false)
+		return m
+	}
+	if view()["speed"] != nil {
+		t.Fatal("no speed before a test")
+	}
+
+	code, out := h.long("POST", "/api/xray/speed", fmt.Sprintf(`{"monitorId":%d}`, id))
+	sp, _ := out["speed"].(map[string]any)
+	if code != 200 || out["ok"] != true || sp["down"].(float64) < 5 || sp["up"].(float64) < 5 || sp["server"] == nil || sp["from"] != nil {
+		t.Fatalf("panel speed test: %d %v", code, out)
+	}
+	if v, _ := view()["speed"].(map[string]any); v == nil || v["down"] != sp["down"] {
+		t.Fatalf("result not kept: %v", view()["speed"])
+	}
+
+	// From a server running neo-uptime-agent.
+	_, ag := h.do("POST", "/api/agents", `{"name":"Iran","interval":5,"autoImport":false}`, true)
+	agentID := int(ag["agent"].(map[string]any)["id"].(float64))
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go agent.New(agent.Config{Server: h.srv.URL, Token: ag["token"].(string), Interval: 5 * time.Second,
+		BackpackDir: t.TempDir(), KarizDir: t.TempDir(), NoPing: true}).Run(ctx)
+	time.Sleep(1500 * time.Millisecond)
+	code, out = h.long("POST", "/api/xray/speed", fmt.Sprintf(`{"monitorId":%d,"agentId":%d}`, id, agentID))
+	sp, _ = out["speed"].(map[string]any)
+	if code != 200 || out["ok"] != true || sp["from"] != "Iran" || sp["down"].(float64) < 5 {
+		t.Fatalf("speed test from the agent: %d %v", code, out)
+	}
+	if v, _ := view()["speed"].(map[string]any); v == nil || v["from"] != "Iran" {
+		t.Fatalf("agent result not kept: %v", view()["speed"])
+	}
+
+	// A broken config reports why, and keeps the last good result.
+	bad := fmt.Sprintf("vless://00000000-0000-4000-8000-000000000000@127.0.0.1:%d?type=tcp", port)
+	if _, r := h.long("POST", "/api/xray/speed", fmt.Sprintf(`{"link":%q}`, bad)); r["ok"] != false || r["error"] == nil {
+		t.Fatalf("broken config: %v", r)
+	}
+	if code, _ := h.long("POST", "/api/xray/speed", `{"link":"nonsense"}`); code != 400 {
+		t.Fatalf("nonsense link: %d", code)
+	}
+}

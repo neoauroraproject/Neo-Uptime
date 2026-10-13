@@ -77,6 +77,8 @@ type Manager struct {
 
 	importMu sync.Mutex
 	subMu    sync.Mutex
+	speedMu  sync.Mutex
+	speeding map[int64]bool // config monitors being speed-tested
 
 	maintMu sync.RWMutex
 	maints  []*store.Maintenance
@@ -85,14 +87,15 @@ type Manager struct {
 // NewManager wires a manager. Start must be called before use.
 func NewManager(db *store.DB, bp *backpack.Cache, agents *AgentHub, pub Publisher) *Manager {
 	return &Manager{
-		db:      db,
-		env:     &Env{DB: db, Backpack: bp, Agents: agents},
-		agentOf: map[int64]int64{},
-		pub:     pub,
-		runners: map[int64]*runner{},
-		states:  map[int64]*State{},
-		parents: map[int64]int64{},
-		types:   map[int64]string{},
+		db:       db,
+		env:      &Env{DB: db, Backpack: bp, Agents: agents},
+		agentOf:  map[int64]int64{},
+		speeding: map[int64]bool{},
+		pub:      pub,
+		runners:  map[int64]*runner{},
+		states:   map[int64]*State{},
+		parents:  map[int64]int64{},
+		types:    map[int64]string{},
 	}
 }
 

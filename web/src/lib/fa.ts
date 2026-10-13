@@ -1328,4 +1328,21 @@ export const fa: Record<string, string> = {
   'News': 'اطلاعیه',
   'Join the channel': 'عضویت در کانال',
   'Neo Aurora Telegram channel': 'کانال تلگرام نئو آرورا',
+
+  // ---------- speed test ----------
+  'A test moves up to a few hundred MB through the config, and counts against its traffic limit. It runs only when you press the button.': 'هر تست تا چند صد مگابایت از داخل کانفیگ داده جابه‌جا می‌کند و از حجم کانفیگ کم می‌شود. فقط وقتی دکمه را بزنید انجام می‌شود.',
+  'Download first, then upload. About 20 seconds, {s} so far.': 'اول دانلود، بعد آپلود. حدود ۲۰ ثانیه؛ {s} ثانیه گذشته.',
+  'Downloads and uploads real data through this config and measures how fast it goes.': 'داده‌ی واقعی را از داخل همین کانفیگ دانلود و آپلود می‌کند و سرعتش را اندازه می‌گیرد.',
+  'Measuring…': 'در حال اندازه‌گیری…',
+  'No speed test of this config yet.': 'هنوز برای این کانفیگ تست سرعت گرفته نشده.',
+  'Pick a server inside the country to see the speed your users there get.': 'سروری داخل کشور انتخاب کنید تا سرعتی را ببینید که کاربرانتان آن‌جا می‌گیرند.',
+  'Speed test': 'تست سرعت',
+  'Speed test — {name}': 'تست سرعت — {name}',
+  'Start the test': 'شروع تست',
+  'Test again': 'تست دوباره',
+  'The speed test failed': 'تست سرعت انجام نشد',
+  'The speed test failed.': 'تست سرعت انجام نشد.',
+  'Upload was not measured: {why}': 'آپلود اندازه‌گیری نشد: {why}',
+  'this panel': 'همین پنل',
+  '{ago} · from {name} · via {server} · {mb} MB moved': '{ago} · از {name} · با سرور {server} · {mb} مگابایت جابه‌جا شد',
 }

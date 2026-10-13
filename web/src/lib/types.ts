@@ -174,9 +174,22 @@ export interface MonitorView extends Monitor {
   system?: PanelSystem
   agent?: AgentInfo
   xray?: XrayInfo
+  speed?: SpeedResult
   nextCheck: number
   maintenance: boolean
   target: string
+}
+
+/** The last speed test of a config (Mbps; ms). */
+export interface SpeedResult {
+  down: number
+  up: number
+  ping: number
+  server: string
+  from?: string
+  bytes: number
+  upError?: string
+  at: number
 }
 
 /** A V2Ray/Xray config as the UI shows it — never the link itself. */

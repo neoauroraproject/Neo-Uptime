@@ -155,7 +155,7 @@ func (h *xrayHub) forget(id int64) {
 }
 
 // ErrAgentTooOld: the agent predates jobs and must be updated by hand once.
-var ErrAgentTooOld = errors.New("update it with the install command shown under Servers")
+var ErrAgentTooOld = errors.New("update it from the Servers page")
 
 // RunJob hands a one-off job to an agent and waits for its answer, which
 // comes with the agent's next report.

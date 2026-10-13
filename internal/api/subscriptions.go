@@ -362,3 +362,43 @@ func (s *Server) handleParseConfig(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, map[string]any{"name": l.Name, "label": monitor.CleanName(l.Name), "summary": l.Summary(), "endpoint": l.Endpoint(), "protocol": l.Protocol,
 		"network": l.Network, "security": l.Security, "country": monitor.FlagCountry(l.Name)})
 }
+
+// handleSpeedTest measures a config's real download and upload speed, from
+// this panel or from a server. It takes about half a minute, and moves up to
+// a few hundred megabytes through the config: a person starts it, never a
+// schedule.
+func (s *Server) handleSpeedTest(w http.ResponseWriter, r *http.Request) {
+	var in struct {
+		MonitorID int64  `json:"monitorId"`
+		Link      string `json:"link"`
+		AgentID   *int64 `json:"agentId"` // empty: the monitor's own server
+	}
+	if err := readJSON(r, &in); err != nil {
+		writeErr(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	var agentID int64
+	if in.MonitorID != 0 {
+		m, err := s.db.GetMonitor(r.Context(), in.MonitorID)
+		if err != nil || m.Type != monitor.TypeXray {
+			writeErr(w, http.StatusNotFound, "no such config monitor")
+			return
+		}
+		in.Link, agentID = m.Config.Link, m.Config.AgentID
+	}
+	if in.AgentID != nil {
+		agentID = *in.AgentID
+	}
+	if _, err := xray.Parse(in.Link); err != nil {
+		writeErr(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), 2*time.Minute)
+	defer cancel()
+	res, err := s.mgr.SpeedTest(ctx, in.MonitorID, in.Link, agentID)
+	if err != nil {
+		writeJSON(w, map[string]any{"ok": false, "error": err.Error()})
+		return
+	}
+	writeJSON(w, map[string]any{"ok": true, "speed": res})
+}

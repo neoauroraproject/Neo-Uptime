@@ -191,6 +191,17 @@ func (p *prober) runJob(j agentproto.Job) {
 		} else {
 			res.Ping, res.Connect = ping, connect
 		}
+	case "speed":
+		l, err := xray.Parse(j.Link)
+		if err == nil {
+			var sp *xray.Speed
+			if sp, err = xray.MeasureSpeed(ctx, l); err == nil {
+				res.Down, res.Up, res.Ping, res.Server, res.Bytes, res.UpError = sp.Down, sp.Up, sp.Ping, sp.Server, sp.Bytes, sp.UpError
+			}
+		}
+		if err != nil {
+			res.Error = err.Error()
+		}
 	case "update":
 		if err := p.agent.selfUpdate(ctx, j); err != nil {
 			res.Error = err.Error()

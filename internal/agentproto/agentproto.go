@@ -63,7 +63,7 @@ type ProbeResult struct {
 // update the agent itself.
 type Job struct {
 	ID      string `json:"id"`
-	Kind    string `json:"kind"` // fetch | test | update
+	Kind    string `json:"kind"` // fetch | test | speed | update
 	URL     string `json:"url,omitempty"`
 	Link    string `json:"link,omitempty"`
 	Timeout int    `json:"timeout,omitempty"`
@@ -84,6 +84,13 @@ type JobResult struct {
 	Ping     float64 `json:"ping,omitempty"`     // test
 	Connect  float64 `json:"connect,omitempty"`  // test
 	Restart  bool    `json:"restart,omitempty"`  // update: done; the agent restarts into it
+
+	// speed: Mbps both ways, where the data came from, and how much moved.
+	Down    float64 `json:"down,omitempty"`
+	Up      float64 `json:"up,omitempty"`
+	Server  string  `json:"server,omitempty"`
+	Bytes   int64   `json:"bytes,omitempty"`
+	UpError string  `json:"upError,omitempty"`
 }
 
 // System describes the host.
