@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { ArrowDown, ArrowUp, CircleArrowUp, CircleCheck, Cpu, Download, Ellipsis, HardDrive, KeyRound, LoaderCircle, MemoryStick, Pencil, Plus, RefreshCw, Route as RouteIcon, Server, Terminal, Trash2 } from 'lucide-react'
+import { ArrowDown, ArrowUp, CircleArrowUp, CircleCheck, Cpu, Download, Ellipsis, Gauge, HardDrive, KeyRound, LoaderCircle, MemoryStick, Pencil, Plus, RefreshCw, Route as RouteIcon, Server, Terminal, Trash2 } from 'lucide-react'
 import { api } from '../lib/api'
 import { canEdit, useApp } from '../lib/store'
 import { bytes, clsx, duration, n, pct, rate, timeAgo } from '../lib/format'
@@ -11,6 +11,7 @@ import { CountryPicker, Flag, countryName } from '../components/flag'
 import { SourceBadge } from '../components/meta'
 import { TunnelBadges } from '../components/tunnel'
 import { AdCard } from '../components/AdCard'
+import { SpeedDialog, SpeedLine } from '../components/SpeedTest'
 
 function Bar({ value, label }: { value: number; label: string }) {
   const tone = value >= 90 ? 'var(--down)' : value >= 75 ? 'var(--pending)' : 'var(--up)'
@@ -257,6 +258,7 @@ function ServerCard({ a, onEdit, onTunnels }: { a: Agent; onEdit: () => void; on
   const [move, setMove] = useState<{ install: string; addresses?: AgentAddresses; update?: boolean } | null>(null)
   const [checking, setChecking] = useState(false)
   const [updating, setUpdating] = useState(false)
+  const [speedOpen, setSpeedOpen] = useState(false)
   const panelVersion = useApp((st) => st.version)
   const behind = !!a.lastSeen && versionBehind(a.version, panelVersion)
   const s = a.info?.system
@@ -367,6 +369,17 @@ function ServerCard({ a, onEdit, onTunnels }: { a: Agent; onEdit: () => void; on
           </div>
         </>
       ) : null}
+      {!never && (a.speed || (canEdit(role) && a.online)) && (
+        <div className="flex items-center justify-between gap-3 rounded-xl border border-line bg-surface-2/50 px-3 py-2">
+          <span className="min-w-0 truncate text-[12.5px] text-muted">{a.speed ? <SpeedLine s={a.speed} /> : t('No speed test yet')}</span>
+          {canEdit(role) && a.online && (
+            <button type="button" onClick={() => setSpeedOpen(true)}
+              className="shrink-0 inline-flex items-center gap-1.5 h-8 px-3 rounded-lg bg-accent-soft text-accent-ink text-[12.5px] font-semibold hover:brightness-110 transition">
+              <Gauge className="size-3.5" />{t('Speed test')}
+            </button>
+          )}
+        </div>
+      )}
       {(a.info?.backpack || a.info?.kariz) && (
         <div className="flex flex-wrap gap-2">
           {a.info?.backpack && <button onClick={onTunnels} className="inline-flex items-center gap-1.5 h-7 px-2.5 rounded-lg border border-line bg-surface-2 text-[12px] hover:border-line-strong"><SourceBadge source="backpack" /><span className="tnum" dir="ltr">{n(a.info.backpack.online)}/{n(a.info.backpack.tunnels)}</span></button>}
@@ -385,6 +398,10 @@ function ServerCard({ a, onEdit, onTunnels }: { a: Agent; onEdit: () => void; on
         </span>
         <span>{a.lastSeen ? t('last report {ago}', { ago: timeAgo(a.lastSeen * 1000, now) }) : ''}</span>
       </div>
+      {canEdit(role) && (
+        <SpeedDialog open={speedOpen} onClose={() => setSpeedOpen(false)} title={t('Speed test — {name}', { name: a.name })} direct agentId={a.id} last={a.speed}
+          onResult={() => { useApp.getState().loadAgents().catch(() => {}) }} />
+      )}
       <Modal open={!!token} onClose={() => setToken(null)} title={t('New install command for {name}', { name: a.name })} footer={<Button variant="primary" onClick={() => setToken(null)}>{t('Done')}</Button>}>
         {token && <InstallBox command={token.install} addresses={token.addresses} />}
       </Modal>

@@ -219,6 +219,8 @@ func TestSpeedThroughConfig(t *testing.T) {
 		}
 	}))
 	defer target.Close()
+	t.Setenv("NEO_UPTIME_OOKLA_LIST", "off")
+	t.Setenv("NEO_UPTIME_SPEED_URL", "")
 	oldServers, oldWarm, oldDown, oldUp := speedServers, speedWarm, speedDownFor, speedUpFor
 	t.Cleanup(func() { speedServers, speedWarm, speedDownFor, speedUpFor = oldServers, oldWarm, oldDown, oldUp })
 	speedServers = speedServers[:1]
@@ -241,7 +243,7 @@ func TestSpeedThroughConfig(t *testing.T) {
 	defer cancel()
 	phases := map[string]int{}
 	var peak float64
-	sp, err := MeasureSpeed(ctx, l, func(p agentproto.SpeedProgress) {
+	sp, err := MeasureSpeed(ctx, l, "", func(p agentproto.SpeedProgress) {
 		phases[p.Phase]++
 		if p.Phase != "ping" && p.Cur > peak {
 			peak = p.Cur
@@ -264,7 +266,7 @@ func TestSpeedThroughConfig(t *testing.T) {
 
 	// A config that does not work says so, with the reason.
 	bad, _ := Parse(fmt.Sprintf("vless://00000000-0000-4000-8000-000000000000@127.0.0.1:%d?type=tcp#bad", port))
-	if _, err := MeasureSpeed(ctx, bad, nil); err == nil {
+	if _, err := MeasureSpeed(ctx, bad, "", nil); err == nil {
 		t.Fatal("a wrong id must not measure a speed")
 	} else {
 		t.Log(err)

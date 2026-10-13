@@ -1,6 +1,7 @@
 package api
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -49,11 +50,13 @@ type agentView struct {
 	*store.Agent
 	Online bool               `json:"online"`
 	Info   *monitor.AgentInfo `json:"info,omitempty"`
+	// Speed is the last speed test of the server's own connection.
+	Speed *monitor.SpeedResult `json:"speed,omitempty"`
 }
 
 func (s *Server) agentView(a *store.Agent) agentView {
 	st := s.agents.Get(a.ID)
-	v := agentView{Agent: a, Info: st.Info()}
+	v := agentView{Agent: a, Info: st.Info(), Speed: s.mgr.ServerSpeedOf(context.Background(), a.ID)}
 	if v.Info != nil {
 		interval := max(a.Interval, 5)
 		v.Online = st.ReceivedAt.Unix() > 0 && int(time.Since(st.ReceivedAt).Seconds()) < max(3*interval, 60)

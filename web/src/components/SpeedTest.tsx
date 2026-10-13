@@ -164,22 +164,37 @@ function Go({ onClick, again }: { onClick: () => void; again?: boolean }) {
 
 type Job = { state: 'starting' | 'queued' | 'running' | 'done' | 'error'; progress?: SpeedProgress; result?: SpeedResult; error?: string }
 
+const PROVIDER_KEY = 'neo-speed-provider'
+type Provider = 'ookla' | 'cloudflare'
+const savedProvider = (): Provider => {
+  try {
+    return localStorage.getItem(PROVIDER_KEY) === 'cloudflare' ? 'cloudflare' : 'ookla'
+  } catch {
+    return 'ookla'
+  }
+}
+
 /**
- * Measures a config's real speed by hand: ping, then download and upload
- * through the config, from this panel or from one of the servers, with the
- * needle moving as it goes.
+ * Measures real speed by hand: ping, then download and upload, with the
+ * needle moving as it goes. Of a V2Ray config (monitorId) — from this panel
+ * or from one of the servers — or of a server's own connection (direct).
  */
-export function SpeedDialog({ m, open, onClose }: { m: MonitorView; open: boolean; onClose: () => void }) {
+export function SpeedDialog({ open, onClose, title, monitorId, direct, agentId, last, onResult }: {
+  open: boolean; onClose: () => void; title: string
+  monitorId?: number; direct?: boolean; agentId?: number
+  last?: SpeedResult | null; onResult?: (r: SpeedResult) => void
+}) {
   const t = useT()
   const agents = useApp((s) => s.agents)
-  const [from, setFrom] = useState(m.config.agentId ?? 0)
+  const [from, setFrom] = useState(agentId ?? 0)
+  const [provider, setProvider] = useState<Provider>(savedProvider)
   const [job, setJob] = useState<Job | null>(null)
   const run = useRef(0) // which start the polling belongs to
   const now = useNow(1000)
 
   useEffect(() => {
     if (open) {
-      setFrom(m.config.agentId ?? 0)
+      setFrom(agentId ?? 0)
       setJob(null)
     } else {
       run.current++ // closing stops following the test; it finishes on its own
@@ -191,7 +206,7 @@ export function SpeedDialog({ m, open, onClose }: { m: MonitorView; open: boolea
     const mine = ++run.current
     setJob({ state: 'starting' })
     try {
-      const r = await api.post<{ ok: boolean; id?: string; error?: string }>('/api/xray/speed', { monitorId: m.id, agentId: from })
+      const r = await api.post<{ ok: boolean; id?: string; error?: string }>('/api/xray/speed', { monitorId, direct, agentId: direct ? agentId ?? 0 : from, provider })
       if (!r.ok || !r.id) {
         setJob({ state: 'error', error: r.error || t('The speed test failed.') })
         return
@@ -203,8 +218,7 @@ export function SpeedDialog({ m, open, onClose }: { m: MonitorView; open: boolea
         if (run.current !== mine) return
         setJob(j)
         if (j.state === 'done' && j.result) {
-          const sp = j.result
-          useApp.setState((s) => (s.monitors[m.id] ? { monitors: { ...s.monitors, [m.id]: { ...s.monitors[m.id], speed: sp } } } : s))
+          onResult?.(j.result)
           return
         }
         if (j.state === 'error') return
@@ -216,14 +230,16 @@ export function SpeedDialog({ m, open, onClose }: { m: MonitorView; open: boolea
 
   const live = job && (job.state === 'starting' || job.state === 'queued' || job.state === 'running')
   const p = job?.progress
-  const res = job?.state === 'done' ? job.result! : !job ? m.speed ?? null : null
+  const res = job?.state === 'done' ? job.result! : !job ? last ?? null : null
   const phase = p?.phase ?? 'ping'
-  const fromName = from ? agents.find((a) => a.id === from)?.name : ''
+  const fromName = (direct ? agentId : from) ? agents.find((a) => a.id === (direct ? agentId : from))?.name : ''
+  const waitingFor = direct ? agentId : from
 
   const dial = () => {
     if (!live) return null
-    if (!p) {
-      // Not started yet: for a server, waiting for its next report.
+    if (!p || p.phase === 'server') {
+      // Not started yet (for a server: waiting for its next report), or
+      // looking for the nearest test server.
       return <Dial value={0} color={COLORS.ping} label={t('Ping')} unit="ms" idle />
     }
     if (phase === 'ping') return <Dial value={p.cur} color={COLORS.ping} label={t('Ping')} unit="ms" />
@@ -233,14 +249,14 @@ export function SpeedDialog({ m, open, onClose }: { m: MonitorView; open: boolea
   const body = () => {
     if (live) {
       const samples = phase === 'upload' ? p?.upSamples ?? [] : phase === 'download' ? p?.downSamples ?? [] : []
-      const waiting = !p
+      const waiting = !p || phase === 'server'
       return (
         <div className="space-y-4">
           <div className="relative">
             {dial()}
             {waiting && (
               <p className="absolute inset-x-0 bottom-[26%] text-center text-[12.5px] text-white/60 px-6">
-                {job?.state === 'starting' ? t('Starting…') : from ? t('Waiting for {name} to pick it up — up to 20 seconds.', { name: fromName ?? '' }) : t('Connecting through the config…')}
+                {job?.state === 'starting' ? t('Starting…') : !p ? (waitingFor ? t('Waiting for {name} to pick it up — up to 20 seconds.', { name: fromName ?? '' }) : t('Starting…')) : t('Finding the nearest test server…')}
               </p>
             )}
           </div>
@@ -286,29 +302,52 @@ export function SpeedDialog({ m, open, onClose }: { m: MonitorView; open: boolea
         {job?.state === 'error' && <Alert tone="danger" title={t('The speed test failed')}>{job.error}</Alert>}
         <div className="flex flex-col items-center gap-3">
           <Go onClick={start} />
-          <p className="text-[12.5px] text-white/50">{t('Press to measure ping, download and upload through this config.')}</p>
+          <p className="text-[12.5px] text-white/50">{direct ? t('Press to measure the connection of this server: ping, download and upload.') : t('Press to measure ping, download and upload through this config.')}</p>
         </div>
       </div>
     )
   }
 
   return (
-    <Modal open={open} onClose={onClose} size="md" title={t('Speed test — {name}', { name: m.name })}
+    <Modal open={open} onClose={onClose} size="md" title={title}
       footer={<Button variant="ghost" onClick={onClose}>{t('Close')}</Button>}>
       <div className="space-y-4">
         {!live && (
-          <Field label={t('Test from')} htmlFor="spf" help={t('Pick a server inside the country to see the speed your users there get.')}>
-            <Select id="spf" value={from} onChange={(e) => { setFrom(Number(e.target.value)); if (job?.state === 'done') setJob(null) }}>
-              <option value={0}>{t('This panel’s server')}</option>
-              {agents.map((a) => <option key={a.id} value={a.id}>{a.name}{a.online ? '' : ` (${t('offline')})`}</option>)}
-            </Select>
-          </Field>
+          <div className={clsx('grid gap-3', !direct && 'sm:grid-cols-2')}>
+            {!direct && (
+              <Field label={t('Test from')} htmlFor="spf" help={t('Pick a server inside the country to see the speed your users there get.')}>
+                <Select id="spf" value={from} onChange={(e) => { setFrom(Number(e.target.value)); if (job?.state === 'done') setJob(null) }}>
+                  <option value={0}>{t('This panel’s server')}</option>
+                  {agents.map((a) => <option key={a.id} value={a.id}>{a.name}{a.online ? '' : ` (${t('offline')})`}</option>)}
+                </Select>
+              </Field>
+            )}
+            <Field label={t('Test servers')} htmlFor="spp" help={provider === 'ookla' ? t('The nearest Speedtest.net server; Cloudflare if none answers.') : t('Cloudflare’s speed test servers.')}>
+              <Select id="spp" value={provider} onChange={(e) => {
+                const v = e.target.value as Provider
+                setProvider(v)
+                try { localStorage.setItem(PROVIDER_KEY, v) } catch { /* storage off */ }
+              }}>
+                <option value="ookla">Speedtest by Ookla</option>
+                <option value="cloudflare">Cloudflare</option>
+              </Select>
+            </Field>
+          </div>
         )}
         <div className="rounded-3xl px-4 py-5 text-white" style={{ background: 'radial-gradient(120% 90% at 50% 0%, #15244a 0%, #0a1226 55%, #070c1a 100%)', boxShadow: 'inset 0 0 0 1px rgba(255,255,255,0.07)' }}>
           {body()}
         </div>
-        <p className="text-[12.5px] text-subtle leading-relaxed">{t('A test moves up to a few hundred MB through the config, and counts against its traffic limit. It runs only when you press the button.')}</p>
+        <p className="text-[12.5px] text-subtle leading-relaxed">{direct ? t('A test moves up to a few hundred MB through this server’s connection. It runs only when you press the button.') : t('A test moves up to a few hundred MB through the config, and counts against its traffic limit. It runs only when you press the button.')}</p>
       </div>
     </Modal>
+  )
+}
+
+/** The speed test of a V2Ray config; its result is kept with the monitor. */
+export function ConfigSpeedDialog({ m, open, onClose }: { m: MonitorView; open: boolean; onClose: () => void }) {
+  const t = useT()
+  return (
+    <SpeedDialog open={open} onClose={onClose} title={t('Speed test — {name}', { name: m.name })} monitorId={m.id} agentId={m.config.agentId ?? 0} last={m.speed}
+      onResult={(sp) => useApp.setState((s) => (s.monitors[m.id] ? { monitors: { ...s.monitors, [m.id]: { ...s.monitors[m.id], speed: sp } } } : s))} />
   )
 }

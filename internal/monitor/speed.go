@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -81,6 +82,41 @@ func (mg *Manager) Speeds(ctx context.Context) map[int64]*SpeedResult {
 	return out
 }
 
+// ServerSpeedOf returns the last speed test of a server's own connection.
+func (mg *Manager) ServerSpeedOf(ctx context.Context, agentID int64) *SpeedResult {
+	raw := mg.db.GetSetting(ctx, "serverSpeed."+strconv.FormatInt(agentID, 10), "")
+	if raw == "" {
+		return nil
+	}
+	var r SpeedResult
+	if json.Unmarshal([]byte(raw), &r) != nil {
+		return nil
+	}
+	return &r
+}
+
+// SpeedRequest says what to measure. With a Link it is a config; without one
+// (Direct) it is the connection of the server itself. AgentID is the server
+// that runs the test: 0 is the panel's own.
+type SpeedRequest struct {
+	MonitorID int64  // the config monitor the result belongs to, or 0
+	Link      string // the config
+	AgentID   int64
+	Direct    bool
+	Provider  string // "" or "ookla" | "cloudflare"
+}
+
+// key names what is measured, so that one test of it runs at a time.
+func (r SpeedRequest) key() string {
+	if r.Direct {
+		return "a" + strconv.FormatInt(r.AgentID, 10)
+	}
+	if r.MonitorID != 0 {
+		return "m" + strconv.FormatInt(r.MonitorID, 10)
+	}
+	return ""
+}
+
 // SpeedJob is a speed test running in the background, which the page
 // follows by polling.
 type SpeedJob struct {
@@ -95,13 +131,18 @@ type SpeedJob struct {
 
 // StartSpeedJob starts a speed test of a config in the background. id is the
 // monitor it belongs to (its result is kept there), or 0.
-func (mg *Manager) StartSpeedJob(id int64, link string, agentID int64) (string, error) {
-	if _, err := xray.Parse(link); err != nil {
+func (mg *Manager) StartSpeedJob(req SpeedRequest) (string, error) {
+	if req.Direct {
+		req.Link = ""
+	} else if _, err := xray.Parse(req.Link); err != nil {
 		return "", err
 	}
+	if req.Provider != "" && req.Provider != xray.ProviderOokla && req.Provider != xray.ProviderCloudflare {
+		return "", errors.New("unknown speed test provider")
+	}
 	var from string
-	if agentID != 0 {
-		a, err := mg.db.GetAgent(mg.ctx, agentID)
+	if req.AgentID != 0 {
+		a, err := mg.db.GetAgent(mg.ctx, req.AgentID)
 		if err != nil {
 			return "", errors.New("that server does not exist")
 		}
@@ -112,13 +153,13 @@ func (mg *Manager) StartSpeedJob(id int64, link string, agentID int64) (string, 
 	job := &SpeedJob{ID: hex.EncodeToString(b), State: "queued", From: from, started: time.Now()}
 
 	mg.speedMu.Lock()
-	if id != 0 {
-		// One test per config at a time.
-		if mg.speeding[id] {
+	if k := req.key(); k != "" {
+		// One test of the same thing at a time.
+		if mg.speeding[k] {
 			mg.speedMu.Unlock()
-			return "", errors.New("a speed test of this config is already running")
+			return "", errors.New("a speed test of this is already running")
 		}
-		mg.speeding[id] = true
+		mg.speeding[k] = true
 	}
 	for k, j := range mg.speedJobs {
 		if time.Since(j.started) > 15*time.Minute {
@@ -136,12 +177,12 @@ func (mg *Manager) StartSpeedJob(id int64, link string, agentID int64) (string, 
 	go func() {
 		ctx, cancel := context.WithTimeout(mg.ctx, 3*time.Minute)
 		defer cancel()
-		res, err := mg.SpeedTest(ctx, id, link, agentID, func(p agentproto.SpeedProgress) {
+		res, err := mg.SpeedTest(ctx, req, func(p agentproto.SpeedProgress) {
 			set(func(j *SpeedJob) { j.State, j.Progress = "running", &p })
 		})
 		set(func(j *SpeedJob) {
-			if id != 0 {
-				delete(mg.speeding, id)
+			if k := req.key(); k != "" {
+				delete(mg.speeding, k)
 			}
 			if err != nil {
 				j.State, j.Error = "error", err.Error()
@@ -164,28 +205,37 @@ func (mg *Manager) SpeedJobState(id string) (SpeedJob, bool) {
 	return *j, true
 }
 
-// SpeedTest measures a config's speed, here or on a server, and keeps the
-// result with the monitor (id 0: nothing is kept). onProgress, when set,
-// hears how it goes while it runs.
-func (mg *Manager) SpeedTest(ctx context.Context, id int64, link string, agentID int64, onProgress func(agentproto.SpeedProgress)) (*SpeedResult, error) {
-	l, err := xray.Parse(link)
-	if err != nil {
-		return nil, err
+// SpeedTest measures a config's speed or a server's own connection, here or
+// on a server, and keeps the result (with the monitor, or with the server).
+// onProgress, when set, hears how it goes while it runs.
+func (mg *Manager) SpeedTest(ctx context.Context, req SpeedRequest, onProgress func(agentproto.SpeedProgress)) (*SpeedResult, error) {
+	var l *xray.Link
+	if !req.Direct {
+		var err error
+		if l, err = xray.Parse(req.Link); err != nil {
+			return nil, err
+		}
 	}
 	r := &SpeedResult{}
-	if agentID == 0 {
-		sp, err := xray.MeasureSpeed(ctx, l, onProgress)
+	if req.AgentID == 0 {
+		sp, err := xray.MeasureSpeed(ctx, l, req.Provider, onProgress)
 		if err != nil {
 			return nil, err
 		}
 		r.Down, r.Up, r.Ping, r.Jitter, r.Server, r.Bytes, r.UpError = sp.Down, sp.Up, sp.Ping, sp.Jitter, sp.Server, sp.Bytes, sp.UpError
 		r.DownSamples, r.UpSamples = sp.DownSamples, sp.UpSamples
 	} else {
-		a, err := mg.db.GetAgent(ctx, agentID)
+		a, err := mg.db.GetAgent(ctx, req.AgentID)
 		if err != nil {
 			return nil, errors.New("that server does not exist")
 		}
-		jr, err := mg.runJob(ctx, agentID, agentproto.Job{Kind: "speed", Link: link, Timeout: 75}, func(p agentproto.JobResult) {
+		// Speedtest.net servers and tests without a config came with the
+		// agent that has the speed2 capability.
+		if st := mg.env.Agents.Get(a.ID); st != nil && st.Report != nil &&
+			(req.Direct || req.Provider != xray.ProviderCloudflare) && !slices.Contains(st.Report.Caps, agentproto.CapSpeed2) {
+			return nil, fmt.Errorf("neo-uptime-agent on %s is too old for this speed test: %w", a.Name, ErrAgentTooOld)
+		}
+		jr, err := mg.runJob(ctx, req.AgentID, agentproto.Job{Kind: "speed", Link: req.Link, Direct: req.Direct, Provider: req.Provider, Timeout: 90}, func(p agentproto.JobResult) {
 			if p.Progress != nil && onProgress != nil {
 				onProgress(*p.Progress)
 			}
@@ -204,10 +254,21 @@ func (mg *Manager) SpeedTest(ctx context.Context, id int64, link string, agentID
 	}
 	r.DownSamples, r.UpSamples = thin(r.DownSamples, 50), thin(r.UpSamples, 50)
 	r.At = time.Now().UnixMilli()
-	if id != 0 {
+	key := ""
+	switch {
+	case req.Direct:
+		key = "serverSpeed." + strconv.FormatInt(req.AgentID, 10)
+	case req.MonitorID != 0:
+		key = speedKey(req.MonitorID)
+	}
+	if key != "" {
 		b, _ := json.Marshal(r)
-		_ = mg.db.SetSettings(ctx, map[string]string{speedKey(id): string(b)})
-		mg.pub.Publish("monitors", map[string]any{"changed": id})
+		_ = mg.db.SetSettings(ctx, map[string]string{key: string(b)})
+		if req.MonitorID != 0 {
+			mg.pub.Publish("monitors", map[string]any{"changed": req.MonitorID})
+		} else {
+			mg.pub.Publish("agent", map[string]any{"agentId": req.AgentID})
+		}
 	}
 	return r, nil
 }

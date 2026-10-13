@@ -9,7 +9,7 @@ import type { MonitorView, XrayInfo } from '../lib/types'
 import { HeartbeatBar, Sparkline } from './charts'
 import { Badge, IconButton, Spinner, StatusPill, toast } from './ui'
 import { Flag } from './flag'
-import { SpeedDialog, SpeedLine } from './SpeedTest'
+import { ConfigSpeedDialog, SpeedLine } from './SpeedTest'
 
 const protoLabel: Record<string, string> = { vless: 'VLESS', vmess: 'VMess', trojan: 'Trojan', shadowsocks: 'Shadowsocks', hysteria: 'Hysteria2' }
 
@@ -112,7 +112,7 @@ export function ConfigCard({ m }: { m: MonitorView }) {
           </div>
         </div>
       </div>
-      {canEdit(role) && <SpeedDialog m={m} open={speedOpen} onClose={() => setSpeedOpen(false)} />}
+      {canEdit(role) && <ConfigSpeedDialog m={m} open={speedOpen} onClose={() => setSpeedOpen(false)} />}
     </article>
   )
 }
@@ -145,7 +145,7 @@ export function XrayDetails({ m }: { m: MonitorView }) {
         </button>
         </div>
       )}
-      {canEdit(role) && <SpeedDialog m={m} open={speedOpen} onClose={() => setSpeedOpen(false)} />}
+      {canEdit(role) && <ConfigSpeedDialog m={m} open={speedOpen} onClose={() => setSpeedOpen(false)} />}
     </div>
   )
 }

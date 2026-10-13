@@ -182,7 +182,7 @@ export interface MonitorView extends Monitor {
 
 /** The last speed test of a config (Mbps; ms). */
 export interface SpeedProgress {
-  phase: 'ping' | 'download' | 'upload'
+  phase: 'server' | 'ping' | 'download' | 'upload'
   cur: number
   pct: number
   ping?: number
@@ -477,6 +477,8 @@ export interface AgentInfo {
 }
 
 export interface Agent {
+  /** The last speed test of the server's own connection. */
+  speed?: SpeedResult
   id: number
   name: string
   tokenPrefix: string

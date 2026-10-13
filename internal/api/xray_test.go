@@ -255,6 +255,7 @@ func TestSpeedTestOfConfig(t *testing.T) {
 	}))
 	defer speed.Close()
 	t.Setenv("NEO_UPTIME_SPEED_URL", speed.URL)
+	t.Setenv("NEO_UPTIME_OOKLA_LIST", "off") // no real Speedtest.net in tests
 	port := vlessServer(t)
 	link := fmt.Sprintf("vless://%s@127.0.0.1:%d?type=tcp&security=none#Speedy", testUUID, port)
 	_, mon := h.do("POST", "/api/monitors", fmt.Sprintf(`{"name":"Speedy","type":"xray","interval":300,"config":{"link":%q}}`, link), true)
@@ -299,7 +300,7 @@ func TestSpeedTestOfConfig(t *testing.T) {
 	if sp["down"].(float64) < 5 || sp["up"].(float64) < 5 || sp["server"] == nil || sp["from"] != nil || sp["jitter"] == nil || len(sp["downSamples"].([]any)) < 1 {
 		t.Fatalf("panel speed test: %v", st)
 	}
-	if len(phases) < 2 || phases[0] != "ping" {
+	if len(phases) < 2 || (phases[0] != "ping" && phases[0] != "server") {
 		t.Fatalf("the page should see the phases go by: %v", phases)
 	}
 	if v, _ := view()["speed"].(map[string]any); v == nil || v["down"] != sp["down"] {
@@ -321,6 +322,28 @@ func TestSpeedTestOfConfig(t *testing.T) {
 	}
 	if v, _ := view()["speed"].(map[string]any); v == nil || v["from"] != "Iran" {
 		t.Fatalf("agent result not kept: %v", view()["speed"])
+	}
+
+	// The server's own connection, without any config: on the panel and on
+	// the agent, kept with the server.
+	st, _ = runSpeed(`{"direct":true,"agentId":0}`)
+	if sp, _ := st["result"].(map[string]any); sp["down"].(float64) < 5 || sp["from"] != nil {
+		t.Fatalf("direct test on the panel: %v", st)
+	}
+	st, _ = runSpeed(fmt.Sprintf(`{"direct":true,"agentId":%d,"provider":"cloudflare"}`, agentID))
+	if sp, _ := st["result"].(map[string]any); sp["down"].(float64) < 5 || sp["from"] != "Iran" {
+		t.Fatalf("direct test on the agent: %v", st)
+	}
+	_, list := h.do("GET", fmt.Sprintf("/api/agents/%d", agentID), "", false)
+	if v, _ := list["agent"].(map[string]any); v == nil {
+		t.Fatalf("agent view: %v", list)
+	}
+	code, agents := h.doList("GET", "/api/agents")
+	if code != 200 || len(agents) != 1 || agents[0]["speed"] == nil {
+		t.Fatalf("the server's last speed test should come with the server: %d %v", code, agents)
+	}
+	if _, bad := h.do("POST", "/api/xray/speed", `{"direct":true,"agentId":0,"provider":"nope"}`, true); bad["ok"] != false {
+		t.Fatalf("unknown provider: %v", bad)
 	}
 
 	// One test per config at a time.
@@ -351,4 +374,19 @@ func TestSpeedTestOfConfig(t *testing.T) {
 	if code, _ := h.do("POST", "/api/xray/speed", `{"link":"nonsense"}`, true); code != 400 {
 		t.Fatalf("nonsense link: %d", code)
 	}
+}
+
+// doList is do for answers that are a JSON array.
+func (h *harness) doList(method, path string) (int, []map[string]any) {
+	h.t.Helper()
+	req, _ := http.NewRequest(method, h.srv.URL+path, nil)
+	resp, err := h.client.Do(req)
+	if err != nil {
+		h.t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	data, _ := io.ReadAll(resp.Body)
+	var out []map[string]any
+	_ = json.Unmarshal(data, &out)
+	return resp.StatusCode, out
 }

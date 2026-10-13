@@ -84,7 +84,7 @@ func (p *prober) add(jobs []agentproto.Job) {
 
 // attach puts the latest results into a report.
 func (p *prober) attach(r *agentproto.Report) {
-	r.Caps = []string{agentproto.CapXray}
+	r.Caps = []string{agentproto.CapXray, agentproto.CapSpeed2}
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	for _, res := range p.results {
@@ -195,10 +195,14 @@ func (p *prober) runJob(j agentproto.Job) {
 			res.Ping, res.Connect = ping, connect
 		}
 	case "speed":
-		l, err := xray.Parse(j.Link)
+		var l *xray.Link // nil: the server's own connection
+		var err error
+		if !j.Direct {
+			l, err = xray.Parse(j.Link)
+		}
 		if err == nil {
 			var sp *xray.Speed
-			if sp, err = xray.MeasureSpeed(ctx, l, func(pr agentproto.SpeedProgress) { p.progress(j.ID, pr) }); err == nil {
+			if sp, err = xray.MeasureSpeed(ctx, l, j.Provider, func(pr agentproto.SpeedProgress) { p.progress(j.ID, pr) }); err == nil {
 				res.Down, res.Up, res.Ping, res.Jitter, res.Server, res.Bytes, res.UpError = sp.Down, sp.Up, sp.Ping, sp.Jitter, sp.Server, sp.Bytes, sp.UpError
 				res.DownSamples, res.UpSamples = sp.DownSamples, sp.UpSamples
 			}

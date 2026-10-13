@@ -38,28 +38,57 @@ type Speed struct {
 }
 
 type speedServer struct {
-	name string
-	down func(n int64) string
-	up   string
+	name    string
+	down    func(n int64) string // a download of about n bytes
+	up      string               // where uploads are posted; empty: none
+	ping    func() string        // a tiny request; empty: a download of one byte
+	upChunk int64                // one upload request; 0: speedUpChunk
 }
 
-// speedList is the speed test servers in the order they are tried: one of
-// your own first, when NEO_UPTIME_SPEED_URL names it (it answers like
-// Cloudflare's: GET <url>/__down?bytes=N and POST <url>/__up).
-func speedList() []speedServer {
-	if base := strings.TrimRight(strings.TrimSpace(os.Getenv("NEO_UPTIME_SPEED_URL")), "/"); base != "" {
-		host := strings.TrimPrefix(strings.TrimPrefix(base, "https://"), "http://")
-		own := speedServer{host, func(n int64) string { return fmt.Sprintf("%s/__down?bytes=%d", base, n) }, base + "/__up"}
-		return append([]speedServer{own}, speedServers...)
+func (s speedServer) pingURL() string {
+	if s.ping != nil {
+		return s.ping()
 	}
-	return speedServers
+	return s.down(1)
+}
+
+func (s speedServer) chunk() int64 {
+	if s.upChunk > 0 {
+		return s.upChunk
+	}
+	return speedUpChunk
+}
+
+// ownServer is a server of your own, when NEO_UPTIME_SPEED_URL names it (it
+// answers like Cloudflare's: GET <url>/__down?bytes=N and POST <url>/__up).
+func ownServer() []speedServer {
+	base := strings.TrimRight(strings.TrimSpace(os.Getenv("NEO_UPTIME_SPEED_URL")), "/")
+	if base == "" {
+		return nil
+	}
+	host := strings.TrimPrefix(strings.TrimPrefix(base, "https://"), "http://")
+	return []speedServer{{name: host, down: func(n int64) string { return fmt.Sprintf("%s/__down?bytes=%d", base, n) }, up: base + "/__up"}}
+}
+
+// speedList is the servers to try, in order: your own, then (unless
+// Cloudflare is asked for) the nearest Speedtest.net servers, then the
+// built-in ones. why says what went wrong with Speedtest.net, when it did.
+func speedList(ctx context.Context, client *http.Client, provider string) (list []speedServer, why error) {
+	list = ownServer()
+	if provider != ProviderCloudflare {
+		var ookla []speedServer
+		if ookla, why = ooklaServers(ctx, client); why == nil {
+			list = append(list, ookla...)
+		}
+	}
+	return append(list, speedServers...), why
 }
 
 // speedServers are the built-in ones. The first that answers a small
 // request is used for the download. Each takes a request for n bytes.
 var speedServers = []speedServer{
-	{"speed.cloudflare.com", func(n int64) string { return fmt.Sprintf("https://speed.cloudflare.com/__down?bytes=%d", n) }, "https://speed.cloudflare.com/__up"},
-	{"proof.ovh.net", func(int64) string { return "https://proof.ovh.net/files/1Gb.dat" }, ""},
+	{name: "speed.cloudflare.com", down: func(n int64) string { return fmt.Sprintf("https://speed.cloudflare.com/__down?bytes=%d", n) }, up: "https://speed.cloudflare.com/__up"},
+	{name: "proof.ovh.net", down: func(int64) string { return "https://proof.ovh.net/files/1Gb.dat" }},
 }
 
 const (
@@ -88,11 +117,26 @@ func (b browserHeaders) RoundTrip(r *http.Request) (*http.Response, error) {
 	r = r.Clone(r.Context())
 	r.Header.Set("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/138.0.0.0 Safari/537.36")
 	r.Header.Set("Accept", "*/*")
-	if r.URL.Host == "speed.cloudflare.com" {
+	switch {
+	case r.URL.Host == "speed.cloudflare.com":
 		r.Header.Set("Referer", "https://speed.cloudflare.com/")
 		r.Header.Set("Origin", "https://speed.cloudflare.com")
+	case strings.HasSuffix(r.URL.Host, "speedtest.net"):
+		r.Header.Set("Referer", "https://www.speedtest.net/")
 	}
 	return b.RoundTripper.RoundTrip(r)
+}
+
+// directClient sends requests from this machine, as it is: the test is of
+// the machine's own connection.
+func directClient() (*http.Client, func()) {
+	tr := &http.Transport{
+		DialContext:         (&net.Dialer{Timeout: 15 * time.Second, KeepAlive: 30 * time.Second}).DialContext,
+		MaxIdleConnsPerHost: speedStreams,
+		DisableCompression:  true,
+		TLSHandshakeTimeout: 15 * time.Second,
+	}
+	return &http.Client{Transport: browserHeaders{tr}}, tr.CloseIdleConnections
 }
 
 // httpClient sends requests through an Xray instance.
@@ -111,42 +155,54 @@ func httpClient(inst *core.Instance) (*http.Client, func()) {
 	return &http.Client{Transport: browserHeaders{tr}}, tr.CloseIdleConnections
 }
 
-// MeasureSpeed connects through the link and measures latency, then download
-// and upload speed with several parallel connections, a few seconds each
-// way. report, when set, hears how it goes about five times a second.
-func MeasureSpeed(ctx context.Context, l *Link, report func(agentproto.SpeedProgress)) (*Speed, error) {
+// MeasureSpeed measures latency, then download and upload speed with several
+// parallel connections, a few seconds each way. With a link it goes through
+// that config; without one (nil) it measures this machine's own connection.
+// provider is "ookla" (the default: the nearest Speedtest.net servers) or
+// "cloudflare". report, when set, hears how it goes about five times a second.
+func MeasureSpeed(ctx context.Context, l *Link, provider string, report func(agentproto.SpeedProgress)) (*Speed, error) {
 	select {
 	case tests <- struct{}{}:
 		defer func() { <-tests }()
 	case <-ctx.Done():
 		return nil, errors.New("timed out waiting for other tests")
 	}
-	prog := agentproto.SpeedProgress{Phase: "ping"}
+	prog := agentproto.SpeedProgress{Phase: "server"}
 	emit := func() {
 		if report != nil {
 			report(prog)
 		}
 	}
 	emit()
-	cfg, err := build(l)
-	if err != nil {
-		return nil, fmt.Errorf("xray rejected the config: %w", err)
+	var (
+		client *http.Client
+		done   func()
+	)
+	where := "this server"
+	if l == nil {
+		client, done = directClient()
+	} else {
+		where = "this config"
+		cfg, err := build(l)
+		if err != nil {
+			return nil, fmt.Errorf("xray rejected the config: %w", err)
+		}
+		inst, err := Start(cfg)
+		if err != nil {
+			return nil, fmt.Errorf("xray could not start the config: %w", err)
+		}
+		defer inst.Close()
+		client, done = httpClient(inst)
 	}
-	inst, err := Start(cfg)
-	if err != nil {
-		return nil, fmt.Errorf("xray could not start the config: %w", err)
-	}
-	defer inst.Close()
-	client, done := httpClient(inst)
 	defer done()
 
 	res := &Speed{}
 	var total atomic.Int64
 
-	// The first server that answers a small request is the one used.
+	// The first server whose real download request is accepted is used.
+	servers, ooklaErr := speedList(ctx, client, provider)
 	pick := -1
 	var lastErr error
-	servers := speedList()
 	var pings []float64
 	for i, srv := range servers {
 		// The size the test will really ask for must be allowed. This also
@@ -154,7 +210,7 @@ func MeasureSpeed(ctx context.Context, l *Link, report func(agentproto.SpeedProg
 		_, err := smallRequest(ctx, client, srv.down(speedChunk))
 		var d float64
 		if err == nil {
-			d, err = smallRequest(ctx, client, srv.down(1))
+			d, err = smallRequest(ctx, client, srv.pingURL())
 		}
 		if err != nil {
 			lastErr = fmt.Errorf("%s: %w", srv.name, err)
@@ -165,18 +221,23 @@ func MeasureSpeed(ctx context.Context, l *Link, report func(agentproto.SpeedProg
 		break
 	}
 	if pick < 0 {
-		if why := diagnose(l); why != "" {
-			return nil, errors.New(why)
+		if l != nil {
+			if why := diagnose(l); why != "" {
+				return nil, errors.New(why)
+			}
 		}
-		return nil, fmt.Errorf("no speed test server could be reached through this config: %w", explain(ctx, lastErr))
+		if lastErr == nil {
+			lastErr = ooklaErr
+		}
+		return nil, fmt.Errorf("no speed test server could be reached from %s: %w", where, explain(ctx, lastErr))
 	}
 	srv := servers[pick]
 	res.Server, prog.Server = srv.name, srv.name
-	prog.Cur, prog.Pct = pings[0], 1/float64(speedPings)
+	prog.Phase, prog.Cur, prog.Pct = "ping", pings[0], 1/float64(speedPings)
 	prog.Ping, prog.Jitter = pingStats(pings)
 	emit()
 	for len(pings) < speedPings {
-		d, err := smallRequest(ctx, client, srv.down(1))
+		d, err := smallRequest(ctx, client, srv.pingURL())
 		if err != nil {
 			if ctx.Err() != nil {
 				return nil, explain(ctx, err)
@@ -213,7 +274,7 @@ func MeasureSpeed(ctx context.Context, l *Link, report func(agentproto.SpeedProg
 		prog.Cur, prog.Pct, prog.UpSamples = cur, pct, s
 		emit()
 	}, func(c context.Context, n *atomic.Int64) error {
-		return upload(c, client, srv.up, n, &total)
+		return upload(c, client, srv.up, srv.chunk(), n, &total)
 	}); err != nil {
 		res.UpError = explain(ctx, err).Error()
 	} else {
@@ -406,12 +467,12 @@ func (c *counted) Read(p []byte) (int, error) {
 	return k, nil
 }
 
-func upload(ctx context.Context, client *http.Client, url string, n, total *atomic.Int64) error {
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, &counted{left: speedUpChunk, n: n, total: total})
+func upload(ctx context.Context, client *http.Client, url string, chunk int64, n, total *atomic.Int64) error {
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, &counted{left: chunk, n: n, total: total})
 	if err != nil {
 		return err
 	}
-	req.ContentLength = speedUpChunk
+	req.ContentLength = chunk
 	req.Header.Set("Content-Type", "application/octet-stream")
 	resp, err := client.Do(req)
 	if err != nil {

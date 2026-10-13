@@ -373,28 +373,32 @@ func (s *Server) handleSpeedTest(w http.ResponseWriter, r *http.Request) {
 		MonitorID int64  `json:"monitorId"`
 		Link      string `json:"link"`
 		AgentID   *int64 `json:"agentId"` // empty: the monitor's own server
+		Direct    bool   `json:"direct"`  // the server's own connection, no config
+		Provider  string `json:"provider"`
 	}
 	if err := readJSON(r, &in); err != nil {
 		writeErr(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	var agentID int64
-	if in.MonitorID != 0 {
+	req := monitor.SpeedRequest{MonitorID: in.MonitorID, Link: in.Link, Direct: in.Direct, Provider: in.Provider}
+	if in.MonitorID != 0 && !in.Direct {
 		m, err := s.db.GetMonitor(r.Context(), in.MonitorID)
 		if err != nil || m.Type != monitor.TypeXray {
 			writeErr(w, http.StatusNotFound, "no such config monitor")
 			return
 		}
-		in.Link, agentID = m.Config.Link, m.Config.AgentID
+		req.Link, req.AgentID = m.Config.Link, m.Config.AgentID
 	}
 	if in.AgentID != nil {
-		agentID = *in.AgentID
+		req.AgentID = *in.AgentID
 	}
-	if _, err := xray.Parse(in.Link); err != nil {
+	if in.Direct {
+		req.MonitorID, req.Link = 0, ""
+	} else if _, err := xray.Parse(req.Link); err != nil {
 		writeErr(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	id, err := s.mgr.StartSpeedJob(in.MonitorID, in.Link, agentID)
+	id, err := s.mgr.StartSpeedJob(req)
 	if err != nil {
 		writeJSON(w, map[string]any{"ok": false, "error": err.Error()})
 		return

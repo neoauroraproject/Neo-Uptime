@@ -78,7 +78,7 @@ type Manager struct {
 	importMu  sync.Mutex
 	subMu     sync.Mutex
 	speedMu   sync.Mutex
-	speeding  map[int64]bool // config monitors being speed-tested
+	speeding  map[string]bool // what is being speed-tested: "m<monitor>" or "a<server>"
 	speedJobs map[string]*SpeedJob
 
 	maintMu sync.RWMutex
@@ -91,7 +91,7 @@ func NewManager(db *store.DB, bp *backpack.Cache, agents *AgentHub, pub Publishe
 		db:        db,
 		env:       &Env{DB: db, Backpack: bp, Agents: agents},
 		agentOf:   map[int64]int64{},
-		speeding:  map[int64]bool{},
+		speeding:  map[string]bool{},
 		speedJobs: map[string]*SpeedJob{},
 		pub:       pub,
 		runners:   map[int64]*runner{},

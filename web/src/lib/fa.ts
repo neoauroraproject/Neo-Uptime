@@ -1356,4 +1356,12 @@ export const fa: Record<string, string> = {
 
   // ---------- speed card ----------
   'No speed test yet': 'هنوز تست سرعت گرفته نشده',
+
+  // ---------- speed test ookla ----------
+  'A test moves up to a few hundred MB through this server’s connection. It runs only when you press the button.': 'هر تست تا چند صد مگابایت از اتصال همین سرور داده جابه‌جا می‌کند. فقط وقتی دکمه را بزنید انجام می‌شود.',
+  'Cloudflare’s speed test servers.': 'سرورهای تست سرعت Cloudflare.',
+  'Finding the nearest test server…': 'در حال پیدا کردن نزدیک‌ترین سرور تست…',
+  'Press to measure the connection of this server: ping, download and upload.': 'بزنید تا اتصال همین سرور اندازه‌گیری شود: پینگ، دانلود و آپلود.',
+  'Test servers': 'سرورهای تست',
+  'The nearest Speedtest.net server; Cloudflare if none answers.': 'نزدیک‌ترین سرور Speedtest.net؛ اگر هیچ‌کدام جواب نداد، Cloudflare.',
 }

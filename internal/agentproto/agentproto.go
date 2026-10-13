@@ -38,6 +38,10 @@ type Report struct {
 // CapXray means the agent tests V2Ray/Xray configs with a built-in Xray core.
 const CapXray = "xray"
 
+// CapSpeed2 means the agent can run speed tests with Speedtest.net servers
+// and of the server's own connection (no config).
+const CapSpeed2 = "speed2"
+
 // Probe is a test the agent runs again and again, from where it is: today a
 // V2Ray/Xray config tested through a real Xray core.
 type Probe struct {
@@ -72,6 +76,10 @@ type Job struct {
 	Version string `json:"version,omitempty"`
 	Arch    string `json:"arch,omitempty"`
 	SHA256  string `json:"sha256,omitempty"`
+	// speed: where the test servers come from ("ookla" | "cloudflare"), and
+	// whether to measure this machine's own connection, without a config.
+	Provider string `json:"provider,omitempty"`
+	Direct   bool   `json:"direct,omitempty"`
 }
 
 // JobResult answers a job.
@@ -102,7 +110,7 @@ type JobResult struct {
 // SpeedProgress is how a speed test is going: what is being measured, the
 // speed right now and what came out of the phases already done.
 type SpeedProgress struct {
-	Phase  string  `json:"phase"` // ping | download | upload
+	Phase  string  `json:"phase"` // server | ping | download | upload
 	Cur    float64 `json:"cur"`   // Mbps now (ms during ping)
 	Pct    float64 `json:"pct"`   // how far the phase is, 0–1
 	Ping   float64 `json:"ping,omitempty"`
