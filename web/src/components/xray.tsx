@@ -85,16 +85,18 @@ export function ConfigCard({ m }: { m: MonitorView }) {
       {msg && !gone && (
         <p className="relative mx-5 mt-3 flex items-start gap-1.5 text-[12px] text-down"><TriangleAlert className="size-3.5 shrink-0 mt-0.5" /><span className="line-clamp-2" dir="auto">{msg}</span></p>
       )}
-      {!gone && (canEdit(role) || m.speed) && (
-        canEdit(role) ? (
-          <button type="button" onClick={() => setSpeedOpen(true)} className="relative mx-5 mt-3 -mb-1 flex items-center gap-1.5 self-start rounded-lg px-2 h-7 -ms-2 text-[12.5px] text-muted hover:text-fg hover:bg-surface-2/70">
-            <Gauge className="size-3.5 shrink-0" />{m.speed ? <SpeedLine s={m.speed} /> : t('Speed test')}
-          </button>
-        ) : (
-          <p className="relative mx-5 mt-3 flex items-center gap-1.5 text-[12.5px] text-muted"><Gauge className="size-3.5 shrink-0" />{m.speed && <SpeedLine s={m.speed} />}</p>
-        )
-      )}
       <div className="relative mt-4 border-t border-line px-5 py-3.5 space-y-3 bg-surface/60">
+        {!gone && (canEdit(role) || m.speed) && (
+          <div className="flex items-center justify-between gap-3">
+            <span className="min-w-0 truncate text-[12.5px] text-muted">{m.speed ? <SpeedLine s={m.speed} /> : t('No speed test yet')}</span>
+            {canEdit(role) && (
+              <button type="button" onClick={() => setSpeedOpen(true)}
+                className="shrink-0 inline-flex items-center gap-1.5 h-8 px-3 rounded-lg bg-accent-soft text-accent-ink text-[12.5px] font-semibold hover:brightness-110 transition">
+                <Gauge className="size-3.5" />{t('Speed test')}
+              </button>
+            )}
+          </div>
+        )}
         <HeartbeatBar beats={beats} height={18} barWidth={4} gap={2} maxBeats={60} />
         <div className="flex items-center justify-between gap-3 text-[12.5px]">
           <span className="inline-flex items-center gap-1.5 text-muted min-w-0">

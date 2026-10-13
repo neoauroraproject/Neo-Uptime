@@ -1353,4 +1353,7 @@ export const fa: Record<string, string> = {
   'Press to measure ping, download and upload through this config.': 'بزنید تا پینگ، دانلود و آپلود از داخل این کانفیگ اندازه‌گیری شود.',
   'Starting…': 'در حال شروع…',
   'Waiting for {name} to pick it up — up to 20 seconds.': 'منتظر برداشتن تست توسط {name} — تا ۲۰ ثانیه.',
+
+  // ---------- speed card ----------
+  'No speed test yet': 'هنوز تست سرعت گرفته نشده',
 }

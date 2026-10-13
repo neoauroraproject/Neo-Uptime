@@ -64,7 +64,7 @@ var speedServers = []speedServer{
 
 const (
 	speedStreams = 4
-	speedChunk   = 100 << 20 // one download request; ends early at the deadline
+	speedChunk   = 25 << 20 // one download request; the streams ask again when it ends
 	speedUpChunk = 50 << 20
 	speedMaxDown = 400 << 20 // a phase ends at this much, however fast the line is
 	speedMaxUp   = 150 << 20
@@ -79,6 +79,22 @@ var (
 	speedUpFor   = 6 * time.Second
 )
 
+// browserHeaders makes the requests look like a browser's: speed test
+// servers (Cloudflare's, for one) answer 403 to big downloads from anything
+// that does not.
+type browserHeaders struct{ http.RoundTripper }
+
+func (b browserHeaders) RoundTrip(r *http.Request) (*http.Response, error) {
+	r = r.Clone(r.Context())
+	r.Header.Set("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/138.0.0.0 Safari/537.36")
+	r.Header.Set("Accept", "*/*")
+	if r.URL.Host == "speed.cloudflare.com" {
+		r.Header.Set("Referer", "https://speed.cloudflare.com/")
+		r.Header.Set("Origin", "https://speed.cloudflare.com")
+	}
+	return b.RoundTripper.RoundTrip(r)
+}
+
 // httpClient sends requests through an Xray instance.
 func httpClient(inst *core.Instance) (*http.Client, func()) {
 	tr := &http.Transport{
@@ -92,7 +108,7 @@ func httpClient(inst *core.Instance) (*http.Client, func()) {
 		MaxIdleConnsPerHost: speedStreams,
 		DisableCompression:  true,
 	}
-	return &http.Client{Transport: tr}, tr.CloseIdleConnections
+	return &http.Client{Transport: browserHeaders{tr}}, tr.CloseIdleConnections
 }
 
 // MeasureSpeed connects through the link and measures latency, then download
@@ -133,9 +149,15 @@ func MeasureSpeed(ctx context.Context, l *Link, report func(agentproto.SpeedProg
 	servers := speedList()
 	var pings []float64
 	for i, srv := range servers {
-		d, err := smallRequest(ctx, client, srv.down(1))
+		// The size the test will really ask for must be allowed. This also
+		// opens the connection, so that the pings below are of a warm one.
+		_, err := smallRequest(ctx, client, srv.down(speedChunk))
+		var d float64
+		if err == nil {
+			d, err = smallRequest(ctx, client, srv.down(1))
+		}
 		if err != nil {
-			lastErr = err
+			lastErr = fmt.Errorf("%s: %w", srv.name, err)
 			continue
 		}
 		pick = i
@@ -231,9 +253,8 @@ func smallRequest(ctx context.Context, client *http.Client, url string) (float64
 	if err != nil {
 		return 0, err
 	}
-	if strings.Contains(url, "proof.ovh.net") {
-		req.Header.Set("Range", "bytes=0-0")
-	}
+	// Only the first byte: a big download is asked about, not started.
+	req.Header.Set("Range", "bytes=0-0")
 	t0 := time.Now()
 	resp, err := client.Do(req)
 	if err != nil {

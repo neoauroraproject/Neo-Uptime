@@ -17,8 +17,9 @@ export function SpeedLine({ s }: { s: SpeedResult }) {
   const t = useT()
   const now = useNow(60_000)
   return (
-    <span className="tnum" dir="auto">
-      <span dir="ltr">↓ {mbps(s.down)} · ↑ {s.up > 0 ? mbps(s.up) : '—'} Mbps</span> · {timeAgo(s.at, now)}
+    <span className="inline-flex items-center gap-2 tnum">
+      <span dir="ltr">↓ {mbps(s.down)} · ↑ {s.up > 0 ? mbps(s.up) : '—'} Mbps</span>
+      <span className="text-subtle" dir="auto">{timeAgo(s.at, now)}</span>
       <span className="sr-only">{t('Speed test')}</span>
     </span>
   )

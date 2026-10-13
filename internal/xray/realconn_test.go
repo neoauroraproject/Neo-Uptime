@@ -198,6 +198,11 @@ func selfSigned(t *testing.T) (certPEM, keyPEM []byte) {
 func TestSpeedThroughConfig(t *testing.T) {
 	zero := make([]byte, 64<<10)
 	target := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// Like Cloudflare's: nothing that does not look like a browser.
+		if !strings.Contains(r.UserAgent(), "Mozilla") {
+			w.WriteHeader(http.StatusForbidden)
+			return
+		}
 		switch r.URL.Path {
 		case "/down":
 			if r.URL.Query().Get("bytes") == "1" {

@@ -234,6 +234,10 @@ func TestSpeedTestOfConfig(t *testing.T) {
 	h.do("POST", "/api/auth/setup", `{"username":"admin","password":"long-enough-pw"}`, true)
 	zero := make([]byte, 64<<10)
 	speed := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if !strings.Contains(r.UserAgent(), "Mozilla") { // as Cloudflare's does
+			w.WriteHeader(http.StatusForbidden)
+			return
+		}
 		switch r.URL.Path {
 		case "/__down":
 			if r.URL.Query().Get("bytes") == "1" {
