@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -17,24 +18,30 @@ import (
 // fakeOokla is a Speedtest.net in miniature: a server list that points at
 // data servers answering as theirs do. Browser-like requests only, as the
 // real ones demand.
-func fakeOokla(t *testing.T, names ...string) (list string, hits map[string]int) {
+func fakeOokla(t *testing.T, delays map[string]time.Duration, order ...string) (list string, hits func(name string) int) {
 	t.Helper()
 	zero := make([]byte, 64<<10)
-	hits = map[string]int{}
+	var mu sync.Mutex
+	count := map[string]int{}
+	hits = func(name string) int {
+		mu.Lock()
+		defer mu.Unlock()
+		return count[name]
+	}
 	var entries []map[string]any
-	for _, name := range names {
+	for _, name := range order {
 		name := name
 		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			if !strings.Contains(r.UserAgent(), "Mozilla") {
 				w.WriteHeader(http.StatusForbidden)
 				return
 			}
-			hits[name]++
+			mu.Lock()
+			count[name]++
+			mu.Unlock()
 			switch {
 			case strings.HasSuffix(r.URL.Path, "/latency.txt"):
-				if name == "slow" {
-					time.Sleep(60 * time.Millisecond)
-				}
+				time.Sleep(delays[name])
 				_, _ = io.WriteString(w, "test=test\n")
 			case strings.HasSuffix(r.URL.Path, "/random4000x4000.jpg"):
 				for {
@@ -66,7 +73,8 @@ func fakeOokla(t *testing.T, names ...string) (list string, hits map[string]int)
 // A server's own connection, measured without any config, with the nearest
 // of the servers Speedtest.net lists: the one that answers fastest.
 func TestSpeedDirectWithOokla(t *testing.T) {
-	list, hits := fakeOokla(t, "slow", "fast", "slower")
+	// The list comes nearest first, but the nearest is not the fastest.
+	list, hits := fakeOokla(t, map[string]time.Duration{"slow": 120 * time.Millisecond, "slower": 250 * time.Millisecond}, "slow", "fast", "slower")
 	t.Setenv("NEO_UPTIME_OOKLA_LIST", list)
 	t.Setenv("NEO_UPTIME_SPEED_URL", "")
 	oldW, oldD, oldU := speedWarm, speedDownFor, speedUpFor
@@ -86,8 +94,8 @@ func TestSpeedDirectWithOokla(t *testing.T) {
 	if sp.Down < 5 || sp.Up < 5 || sp.Bytes < 1<<20 || sp.UpError != "" || phases["server"] < 1 || phases["ping"] < speedPings || phases["download"] < 1 || phases["upload"] < 1 {
 		t.Fatalf("speed: %+v phases %v", sp, phases)
 	}
-	if hits["fast"] < 10 || hits["slow"] > 6 {
-		t.Fatalf("the fast server should carry the test: %v", hits)
+	if hits("fast") < 10 || hits("slow") > 6 || hits("slower") > 6 {
+		t.Fatalf("the fast server should carry the test: fast %d, slow %d, slower %d", hits("fast"), hits("slow"), hits("slower"))
 	}
 	t.Logf("%s: down %.0f up %.0f Mbps, ping %.1f ms", sp.Server, sp.Down, sp.Up, sp.Ping)
 }
