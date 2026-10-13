@@ -34,15 +34,17 @@ type Server struct {
 	hub     *Hub
 	static  fs.FS
 	limiter *auth.Limiter
-	started time.Time
-	mux     *http.ServeMux
-	dataDir string
-	hosts   hostTable
-	certs   *certs.Manager // nil until EnableHTTPS
-	port    int            // the panel's own port, for agent addresses
-	adsMu   sync.Mutex
-	ads     *ads.Service // nil until StartAds
-	binMu   sync.Mutex   // agent binaries being downloaded for updates
+	// agentLimiter counts wrong agent tokens, apart from sign-in failures.
+	agentLimiter *auth.Limiter
+	started      time.Time
+	mux          *http.ServeMux
+	dataDir      string
+	hosts        hostTable
+	certs        *certs.Manager // nil until EnableHTTPS
+	port         int            // the panel's own port, for agent addresses
+	adsMu        sync.Mutex
+	ads          *ads.Service // nil until StartAds
+	binMu        sync.Mutex   // agent binaries being downloaded for updates
 }
 
 // SetPanelPort records the port the panel listens on.
@@ -52,10 +54,11 @@ func (s *Server) SetPanelPort(p int) { s.port = p }
 func New(db *store.DB, mgr *monitor.Manager, bp *backpack.Cache, agents *monitor.AgentHub, hub *Hub, static fs.FS, dataDir string) *Server {
 	s := &Server{
 		db: db, mgr: mgr, bp: bp, agents: agents, hub: hub, static: static,
-		limiter: auth.NewLimiter(8, 15*time.Minute),
-		started: time.Now(),
-		mux:     http.NewServeMux(),
-		dataDir: dataDir,
+		limiter:      auth.NewLimiter(8, 15*time.Minute),
+		agentLimiter: auth.NewLimiter(60, 2*time.Minute),
+		started:      time.Now(),
+		mux:          http.NewServeMux(),
+		dataDir:      dataDir,
 	}
 	s.routes()
 	s.reloadHosts(context.Background())

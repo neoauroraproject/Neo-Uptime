@@ -104,3 +104,39 @@ func TestAgentUpdate(t *testing.T) {
 		t.Fatalf("old agent: %d %s", resp.StatusCode, body)
 	}
 }
+
+// An old agent that keeps sending a wrong token must not lock out the new
+// agent installed on the same server, nor anyone signing in.
+func TestOldAgentTokenDoesNotBlockNewAgent(t *testing.T) {
+	h := newHarness(t)
+	h.do("POST", "/api/auth/setup", `{"username":"admin","password":"long-enough-pw"}`, true)
+	_, out := h.do("POST", "/api/agents", `{"name":"Iran","interval":10,"autoImport":false}`, true)
+	good := out["token"].(string)
+	report := func(tok string) int {
+		req, _ := http.NewRequest("POST", h.srv.URL+"/api/agent/report", strings.NewReader(`{"format":1,"interval":10,"system":{"hostname":"ir"}}`))
+		req.Header.Set("Authorization", "Bearer "+tok)
+		resp, err := http.DefaultClient.Do(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		resp.Body.Close()
+		return resp.StatusCode
+	}
+	if report(good) != 200 {
+		t.Fatal("the right token must work")
+	}
+	var last int
+	for i := 0; i < 150; i++ { // an old agent, every few seconds, for hours
+		last = report("na_old_token_that_was_replaced")
+	}
+	if last != 401 && last != 429 {
+		t.Fatalf("a wrong token: %d", last)
+	}
+	if code := report(good); code != 200 {
+		t.Fatalf("the new agent was locked out: HTTP %d", code)
+	}
+	// Signing in is a separate matter.
+	if code, _ := h.do("POST", "/api/auth/login", `{"username":"admin","password":"long-enough-pw"}`, true); code != 200 {
+		t.Fatalf("sign-in after the agent noise: %d", code)
+	}
+}

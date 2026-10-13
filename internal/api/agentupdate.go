@@ -121,24 +121,30 @@ func download(ctx context.Context, url string, limit int64) ([]byte, error) {
 }
 
 // agentFromToken identifies an agent by its bearer token.
+//
+// A valid token is always accepted. Wrong ones are counted, apart from
+// sign-in attempts: a server whose agent was reinstalled (or removed) keeps
+// sending its old token every few seconds, and that must never lock out the
+// new agent installed on the same machine. Tokens are long and random, so
+// the limit only keeps a flood of bad ones cheap.
 func (s *Server) agentFromToken(w http.ResponseWriter, r *http.Request) (*store.Agent, bool) {
-	ip := s.clientIP(r)
-	if blocked, _ := s.limiter.Blocked(ip); blocked {
-		writeStatus(w, http.StatusTooManyRequests, agentproto.Ack{Error: "too many failed attempts"})
-		return nil, false
-	}
 	token := bearer(r)
 	if token == "" {
 		writeStatus(w, http.StatusUnauthorized, agentproto.Ack{Error: "missing token"})
 		return nil, false
 	}
 	a, err := s.db.GetAgentByTokenHash(r.Context(), auth.HashToken(token))
-	if err != nil {
-		s.limiter.Fail(ip)
-		writeStatus(w, http.StatusUnauthorized, agentproto.Ack{Error: "unknown agent token"})
+	if err == nil {
+		return a, true
+	}
+	ip := s.clientIP(r)
+	if blocked, _ := s.agentLimiter.Blocked(ip); blocked {
+		writeStatus(w, http.StatusTooManyRequests, agentproto.Ack{Error: "too many wrong tokens from this address — wait a few minutes"})
 		return nil, false
 	}
-	return a, true
+	s.agentLimiter.Fail(ip)
+	writeStatus(w, http.StatusUnauthorized, agentproto.Ack{Error: "unknown agent token — copy the install command again from Neo Uptime → Servers"})
+	return nil, false
 }
 
 // handleAgentBinary hands an agent the binary of this panel's release, so a

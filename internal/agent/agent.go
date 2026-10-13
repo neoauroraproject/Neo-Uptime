@@ -211,6 +211,7 @@ func (a *Agent) Run(ctx context.Context) {
 	log.Printf("neo-uptime-agent %s reporting to %s every %s", version.Version, strings.Join(a.Servers(), " or "), a.cfg.Interval)
 	go a.probe.loop(ctx)
 	failures := 0
+	refused := false
 	interval := a.cfg.Interval
 	next := time.Now()
 	for {
@@ -228,6 +229,11 @@ func (a *Agent) Run(ctx context.Context) {
 				if failures == 1 || failures%30 == 0 {
 					log.Printf("report failed (%d in a row): %v", failures, err)
 				}
+				if errors.Is(err, errRefused) {
+					// The token is wrong: asking every few seconds helps no
+					// one. A reinstall restarts the agent with the right one.
+					refused = true
+				}
 			default:
 				if failures > 0 {
 					log.Printf("reporting again after %d failed attempts", failures)
@@ -238,6 +244,10 @@ func (a *Agent) Run(ctx context.Context) {
 				}
 			}
 			next = time.Now().Add(interval)
+			if refused {
+				next = time.Now().Add(max(interval, 2*time.Minute))
+				refused = false
+			}
 			if a.restart.Load() {
 				log.Printf("updated — restarting into the new version")
 				return
