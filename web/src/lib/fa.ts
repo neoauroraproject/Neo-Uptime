@@ -1306,9 +1306,9 @@ export const fa: Record<string, string> = {
   // ---------- agent update ----------
   'Each agent downloads the new version from this panel, checks it and restarts. Monitoring pauses for a few seconds per server.': 'هر ایجنت نسخه‌ی جدید را از همین پنل دانلود می‌کند، بررسی می‌کند و ری‌استارت می‌شود. مانیتورینگ هر سرور چند ثانیه مکث می‌کند.',
   'The agent restarts and reports again in a few seconds.': 'ایجنت ری‌استارت می‌شود و چند ثانیه بعد دوباره گزارش می‌دهد.',
-  'Their agents are too old to update themselves — use “Update the agent” on their cards.': 'ایجنت این سرورها قدیمی‌تر از آن است که خودش آپدیت شود — روی کارتشان «آپدیت ایجنت» را بزنید.',
+  'Their agents cannot update themselves yet — use “Update the agent” on their cards to get the command.': 'ایجنت این سرورها هنوز نمی‌تواند خودش را آپدیت کند — روی کارتشان «آپدیت ایجنت» را بزنید تا دستور را ببینید.',
   'They restart and report again in a few seconds.': 'ری‌استارت می‌شوند و چند ثانیه بعد دوباره گزارش می‌دهند.',
-  'This agent is too old to update itself. Run this once on that server — it keeps its token and settings, and later updates work from here with one click.': 'این ایجنت قدیمی‌تر از آن است که خودش آپدیت شود. این دستور را یک بار روی همان سرور اجرا کنید — توکن و تنظیمات حفظ می‌شود و آپدیت‌های بعدی از همین‌جا با یک کلیک انجام می‌شود.',
+  'This agent cannot update itself yet (it is old, or its service may not write its own file). Run this once on that server — it keeps its token and settings, and later updates work from here with one click.': 'این ایجنت هنوز نمی‌تواند خودش را آپدیت کند (قدیمی است یا سرویسش اجازه‌ی نوشتن روی فایل خودش را ندارد). این دستور را یک بار روی همان سرور اجرا کنید — توکن و تنظیمات حفظ می‌شود و آپدیت‌های بعدی از همین‌جا با یک کلیک انجام می‌شود.',
   'Update agents': 'آپدیت ایجنت‌ها',
   'Update available': 'آپدیت موجود است',
   'Update by hand once: {names}': 'یک بار دستی آپدیت کنید: {names}',

@@ -392,7 +392,7 @@ function ServerCard({ a, onEdit, onTunnels }: { a: Agent; onEdit: () => void; on
         {move && (
           <div className="space-y-3">
             <p className="text-sm text-muted">{move.update
-              ? t('This agent is too old to update itself. Run this once on that server — it keeps its token and settings, and later updates work from here with one click.')
+              ? t('This agent cannot update itself yet (it is old, or its service may not write its own file). Run this once on that server — it keeps its token and settings, and later updates work from here with one click.')
               : t('Run it on that server. The agent keeps its token, updates itself and reports to the new address.')}</p>
             <InstallBox command={move.install} addresses={move.addresses} keepToken />
           </div>
@@ -438,7 +438,7 @@ export default function Servers() {
     }
     setUpdatingAll(false)
     if (done) toast.success(t('{n} agents updated', { n: done }), t('They restart and report again in a few seconds.'))
-    if (manual.length) toast.info(t('Update by hand once: {names}', { names: manual.join('، ') }), t('Their agents are too old to update themselves — use “Update the agent” on their cards.'))
+    if (manual.length) toast.info(t('Update by hand once: {names}', { names: manual.join('، ') }), t('Their agents cannot update themselves yet — use “Update the agent” on their cards to get the command.'))
     if (failed.length) toast.error(t('Update failed: {names}', { names: failed.join('، ') }))
     setTimeout(() => useApp.getState().loadAgents().catch(() => {}), 6000)
   }

@@ -191,6 +191,8 @@ NoNewPrivileges=true
 PrivateTmp=true
 ProtectSystem=strict
 ProtectHome=true
+# The agent updates itself from the panel: it swaps its own binary.
+ReadWritePaths=/usr/local/bin
 
 [Install]
 WantedBy=multi-user.target

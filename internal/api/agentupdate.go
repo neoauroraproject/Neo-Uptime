@@ -223,9 +223,11 @@ func (s *Server) handleUpdateAgent(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	res, err := s.mgr.RunJob(ctx, a.ID, agentproto.Job{Kind: "update", Version: ver, Arch: asset, SHA256: sum, Timeout: 300})
-	if errors.Is(err, monitor.ErrAgentTooOld) || err == nil && strings.Contains(res.Error, "does not know job") {
-		// Agents before v1.3.1 cannot update themselves: once by hand.
-		writeJSON(w, map[string]any{"ok": false, "manual": true, "error": a.Name + " runs an agent too old to update itself — run the update command on it once"})
+	if errors.Is(err, monitor.ErrAgentTooOld) || err == nil && (strings.Contains(res.Error, "does not know job") || strings.Contains(res.Error, "read-only file system")) {
+		// Agents before v1.3.1 cannot update themselves, and installs before
+		// v1.3.7 run in a service that may not write its own binary: the
+		// install command, which rewrites the service too, fixes both once.
+		writeJSON(w, map[string]any{"ok": false, "manual": true, "error": a.Name + " cannot update itself yet — run the update command on it once"})
 		return
 	}
 	if err != nil {
