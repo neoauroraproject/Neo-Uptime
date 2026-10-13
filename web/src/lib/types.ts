@@ -181,10 +181,26 @@ export interface MonitorView extends Monitor {
 }
 
 /** The last speed test of a config (Mbps; ms). */
+export interface SpeedProgress {
+  phase: 'ping' | 'download' | 'upload'
+  cur: number
+  pct: number
+  ping?: number
+  jitter?: number
+  down?: number
+  up?: number
+  server?: string
+  downSamples?: number[]
+  upSamples?: number[]
+}
+
 export interface SpeedResult {
   down: number
   up: number
   ping: number
+  jitter: number
+  downSamples?: number[]
+  upSamples?: number[]
   server: string
   from?: string
   bytes: number

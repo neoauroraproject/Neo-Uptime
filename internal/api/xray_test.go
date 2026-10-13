@@ -263,10 +263,40 @@ func TestSpeedTestOfConfig(t *testing.T) {
 		t.Fatal("no speed before a test")
 	}
 
-	code, out := h.long("POST", "/api/xray/speed", fmt.Sprintf(`{"monitorId":%d}`, id))
-	sp, _ := out["speed"].(map[string]any)
-	if code != 200 || out["ok"] != true || sp["down"].(float64) < 5 || sp["up"].(float64) < 5 || sp["server"] == nil || sp["from"] != nil {
-		t.Fatalf("panel speed test: %d %v", code, out)
+	// start answers at once; the test is followed by polling it.
+	runSpeed := func(body string) (map[string]any, []string) {
+		code, out := h.do("POST", "/api/xray/speed", body, true)
+		if code != 200 || out["ok"] != true || out["id"] == nil {
+			t.Fatalf("start: %d %v", code, out)
+		}
+		var phases []string
+		deadline := time.Now().Add(90 * time.Second)
+		for time.Now().Before(deadline) {
+			_, st := h.do("GET", "/api/xray/speed/"+out["id"].(string), "", false)
+			if p, _ := st["progress"].(map[string]any); p != nil {
+				ph, _ := p["phase"].(string)
+				if len(phases) == 0 || phases[len(phases)-1] != ph {
+					phases = append(phases, ph)
+				}
+			}
+			switch st["state"] {
+			case "done":
+				return st, phases
+			case "error":
+				t.Fatalf("speed test failed: %v", st["error"])
+			}
+			time.Sleep(150 * time.Millisecond)
+		}
+		t.Fatal("speed test did not finish")
+		return nil, nil
+	}
+	st, phases := runSpeed(fmt.Sprintf(`{"monitorId":%d}`, id))
+	sp, _ := st["result"].(map[string]any)
+	if sp["down"].(float64) < 5 || sp["up"].(float64) < 5 || sp["server"] == nil || sp["from"] != nil || sp["jitter"] == nil || len(sp["downSamples"].([]any)) < 1 {
+		t.Fatalf("panel speed test: %v", st)
+	}
+	if len(phases) < 2 || phases[0] != "ping" {
+		t.Fatalf("the page should see the phases go by: %v", phases)
 	}
 	if v, _ := view()["speed"].(map[string]any); v == nil || v["down"] != sp["down"] {
 		t.Fatalf("result not kept: %v", view()["speed"])
@@ -280,21 +310,41 @@ func TestSpeedTestOfConfig(t *testing.T) {
 	go agent.New(agent.Config{Server: h.srv.URL, Token: ag["token"].(string), Interval: 5 * time.Second,
 		BackpackDir: t.TempDir(), KarizDir: t.TempDir(), NoPing: true}).Run(ctx)
 	time.Sleep(1500 * time.Millisecond)
-	code, out = h.long("POST", "/api/xray/speed", fmt.Sprintf(`{"monitorId":%d,"agentId":%d}`, id, agentID))
-	sp, _ = out["speed"].(map[string]any)
-	if code != 200 || out["ok"] != true || sp["from"] != "Iran" || sp["down"].(float64) < 5 {
-		t.Fatalf("speed test from the agent: %d %v", code, out)
+	st, _ = runSpeed(fmt.Sprintf(`{"monitorId":%d,"agentId":%d}`, id, agentID))
+	sp, _ = st["result"].(map[string]any)
+	if sp["from"] != "Iran" || sp["down"].(float64) < 5 || len(sp["upSamples"].([]any)) < 1 {
+		t.Fatalf("speed test from the agent: %v", st)
 	}
 	if v, _ := view()["speed"].(map[string]any); v == nil || v["from"] != "Iran" {
 		t.Fatalf("agent result not kept: %v", view()["speed"])
 	}
 
+	// One test per config at a time.
+	_, first := h.do("POST", "/api/xray/speed", fmt.Sprintf(`{"monitorId":%d}`, id), true)
+	if _, second := h.do("POST", "/api/xray/speed", fmt.Sprintf(`{"monitorId":%d}`, id), true); second["ok"] != false {
+		t.Fatalf("a second test of the same config should wait: %v", second)
+	}
+	for i := 0; i < 300; i++ {
+		if _, s := h.do("GET", "/api/xray/speed/"+first["id"].(string), "", false); s["state"] == "done" {
+			break
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
+
 	// A broken config reports why, and keeps the last good result.
 	bad := fmt.Sprintf("vless://00000000-0000-4000-8000-000000000000@127.0.0.1:%d?type=tcp", port)
-	if _, r := h.long("POST", "/api/xray/speed", fmt.Sprintf(`{"link":%q}`, bad)); r["ok"] != false || r["error"] == nil {
-		t.Fatalf("broken config: %v", r)
+	_, started := h.do("POST", "/api/xray/speed", fmt.Sprintf(`{"link":%q}`, bad), true)
+	for i := 0; ; i++ {
+		_, st := h.do("GET", "/api/xray/speed/"+started["id"].(string), "", false)
+		if st["state"] == "error" && st["error"] != nil {
+			break
+		}
+		if i > 300 || st["state"] == "done" {
+			t.Fatalf("a broken config must end in an error: %v", st)
+		}
+		time.Sleep(100 * time.Millisecond)
 	}
-	if code, _ := h.long("POST", "/api/xray/speed", `{"link":"nonsense"}`); code != 400 {
+	if code, _ := h.do("POST", "/api/xray/speed", `{"link":"nonsense"}`, true); code != 400 {
 		t.Fatalf("nonsense link: %d", code)
 	}
 }

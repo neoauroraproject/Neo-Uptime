@@ -1345,4 +1345,12 @@ export const fa: Record<string, string> = {
   'Upload was not measured: {why}': 'آپلود اندازه‌گیری نشد: {why}',
   'this panel': 'همین پنل',
   '{ago} · from {name} · via {server} · {mb} MB moved': '{ago} · از {name} · با سرور {server} · {mb} مگابایت جابه‌جا شد',
+
+  // ---------- speed test live ----------
+  'Connecting through the config…': 'در حال اتصال از طریق کانفیگ…',
+  'GO': 'شروع',
+  'Jitter': 'جیتر',
+  'Press to measure ping, download and upload through this config.': 'بزنید تا پینگ، دانلود و آپلود از داخل این کانفیگ اندازه‌گیری شود.',
+  'Starting…': 'در حال شروع…',
+  'Waiting for {name} to pick it up — up to 20 seconds.': 'منتظر برداشتن تست توسط {name} — تا ۲۰ ثانیه.',
 }

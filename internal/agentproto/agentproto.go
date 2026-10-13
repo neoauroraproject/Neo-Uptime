@@ -85,12 +85,34 @@ type JobResult struct {
 	Connect  float64 `json:"connect,omitempty"`  // test
 	Restart  bool    `json:"restart,omitempty"`  // update: done; the agent restarts into it
 
-	// speed: Mbps both ways, where the data came from, and how much moved.
-	Down    float64 `json:"down,omitempty"`
-	Up      float64 `json:"up,omitempty"`
-	Server  string  `json:"server,omitempty"`
-	Bytes   int64   `json:"bytes,omitempty"`
-	UpError string  `json:"upError,omitempty"`
+	// speed: while it runs (Partial), how far it is; at the end, Mbps both
+	// ways, where the data came from, and how much moved.
+	Partial     bool           `json:"partial,omitempty"`
+	Progress    *SpeedProgress `json:"progress,omitempty"`
+	Jitter      float64        `json:"jitter,omitempty"`
+	DownSamples []float64      `json:"downSamples,omitempty"`
+	UpSamples   []float64      `json:"upSamples,omitempty"`
+	Down        float64        `json:"down,omitempty"`
+	Up          float64        `json:"up,omitempty"`
+	Server      string         `json:"server,omitempty"`
+	Bytes       int64          `json:"bytes,omitempty"`
+	UpError     string         `json:"upError,omitempty"`
+}
+
+// SpeedProgress is how a speed test is going: what is being measured, the
+// speed right now and what came out of the phases already done.
+type SpeedProgress struct {
+	Phase  string  `json:"phase"` // ping | download | upload
+	Cur    float64 `json:"cur"`   // Mbps now (ms during ping)
+	Pct    float64 `json:"pct"`   // how far the phase is, 0–1
+	Ping   float64 `json:"ping,omitempty"`
+	Jitter float64 `json:"jitter,omitempty"`
+	Down   float64 `json:"down,omitempty"` // finished phases, Mbps
+	Up     float64 `json:"up,omitempty"`
+	Server string  `json:"server,omitempty"`
+	// Mbps over time of each phase so far, a sample every 200 ms.
+	DownSamples []float64 `json:"downSamples,omitempty"`
+	UpSamples   []float64 `json:"upSamples,omitempty"`
 }
 
 // System describes the host.

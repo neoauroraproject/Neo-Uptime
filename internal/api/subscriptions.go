@@ -363,10 +363,11 @@ func (s *Server) handleParseConfig(w http.ResponseWriter, r *http.Request) {
 		"network": l.Network, "security": l.Security, "country": monitor.FlagCountry(l.Name)})
 }
 
-// handleSpeedTest measures a config's real download and upload speed, from
-// this panel or from a server. It takes about half a minute, and moves up to
-// a few hundred megabytes through the config: a person starts it, never a
-// schedule.
+// handleSpeedTest starts a speed test of a config, from this panel or from a
+// server, and returns at once with the test's id; the page then polls
+// handleSpeedState for how it goes. A test takes about half a minute and
+// moves up to a few hundred megabytes through the config: a person starts
+// it, never a schedule.
 func (s *Server) handleSpeedTest(w http.ResponseWriter, r *http.Request) {
 	var in struct {
 		MonitorID int64  `json:"monitorId"`
@@ -393,12 +394,20 @@ func (s *Server) handleSpeedTest(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	ctx, cancel := context.WithTimeout(r.Context(), 2*time.Minute)
-	defer cancel()
-	res, err := s.mgr.SpeedTest(ctx, in.MonitorID, in.Link, agentID)
+	id, err := s.mgr.StartSpeedJob(in.MonitorID, in.Link, agentID)
 	if err != nil {
 		writeJSON(w, map[string]any{"ok": false, "error": err.Error()})
 		return
 	}
-	writeJSON(w, map[string]any{"ok": true, "speed": res})
+	writeJSON(w, map[string]any{"ok": true, "id": id})
+}
+
+// handleSpeedState says how a speed test is going.
+func (s *Server) handleSpeedState(w http.ResponseWriter, r *http.Request) {
+	j, ok := s.mgr.SpeedJobState(r.PathValue("id"))
+	if !ok {
+		writeErr(w, http.StatusNotFound, "no such speed test")
+		return
+	}
+	writeJSON(w, j)
 }

@@ -30,6 +30,8 @@ import (
 	"time"
 
 	"github.com/xtls/xray-core/core"
+
+	"github.com/neoauroraproject/Neo-Uptime/internal/agentproto"
 	"github.com/xtls/xray-core/infra/conf/serial"
 
 	// Server sides, for the tests only.
@@ -232,9 +234,23 @@ func TestSpeedThroughConfig(t *testing.T) {
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 40*time.Second)
 	defer cancel()
-	sp, err := MeasureSpeed(ctx, l)
+	phases := map[string]int{}
+	var peak float64
+	sp, err := MeasureSpeed(ctx, l, func(p agentproto.SpeedProgress) {
+		phases[p.Phase]++
+		if p.Phase != "ping" && p.Cur > peak {
+			peak = p.Cur
+		}
+	})
 	if err != nil {
 		t.Fatal(err)
+	}
+	// It reported while it ran: pings one by one, then the speed over time.
+	if phases["ping"] < speedPings || phases["download"] < 1 || phases["upload"] < 1 || peak < 5 {
+		t.Fatalf("progress: %v peak %.0f", phases, peak)
+	}
+	if len(sp.DownSamples) < 1 || len(sp.UpSamples) < 1 || sp.Jitter < 0 {
+		t.Fatalf("samples: %d down, %d up, jitter %.2f", len(sp.DownSamples), len(sp.UpSamples), sp.Jitter)
 	}
 	if sp.Down < 5 || sp.Up < 5 || sp.Ping < 0 || sp.Bytes < 1<<20 || sp.Server != "local" || sp.UpError != "" {
 		t.Fatalf("speed: %+v", sp)
@@ -243,7 +259,7 @@ func TestSpeedThroughConfig(t *testing.T) {
 
 	// A config that does not work says so, with the reason.
 	bad, _ := Parse(fmt.Sprintf("vless://00000000-0000-4000-8000-000000000000@127.0.0.1:%d?type=tcp#bad", port))
-	if _, err := MeasureSpeed(ctx, bad); err == nil {
+	if _, err := MeasureSpeed(ctx, bad, nil); err == nil {
 		t.Fatal("a wrong id must not measure a speed")
 	} else {
 		t.Log(err)

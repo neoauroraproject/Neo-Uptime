@@ -2,6 +2,7 @@ package agent
 
 import (
 	"context"
+	"fmt"
 	"io"
 	"net/http"
 	"sync"
@@ -97,15 +98,17 @@ func (p *prober) delivered(sent []agentproto.JobResult) {
 	if len(sent) == 0 {
 		return
 	}
+	// A progress note and the final result of a job share its ID.
+	key := func(j agentproto.JobResult) string { return fmt.Sprint(j.ID, j.Partial) }
 	done := map[string]bool{}
 	for _, j := range sent {
-		done[j.ID] = true
+		done[key(j)] = true
 	}
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	kept := p.jobs[:0]
 	for _, j := range p.jobs {
-		if !done[j.ID] {
+		if !done[key(j)] {
 			kept = append(kept, j)
 		}
 	}
@@ -195,8 +198,9 @@ func (p *prober) runJob(j agentproto.Job) {
 		l, err := xray.Parse(j.Link)
 		if err == nil {
 			var sp *xray.Speed
-			if sp, err = xray.MeasureSpeed(ctx, l); err == nil {
-				res.Down, res.Up, res.Ping, res.Server, res.Bytes, res.UpError = sp.Down, sp.Up, sp.Ping, sp.Server, sp.Bytes, sp.UpError
+			if sp, err = xray.MeasureSpeed(ctx, l, func(pr agentproto.SpeedProgress) { p.progress(j.ID, pr) }); err == nil {
+				res.Down, res.Up, res.Ping, res.Jitter, res.Server, res.Bytes, res.UpError = sp.Down, sp.Up, sp.Ping, sp.Jitter, sp.Server, sp.Bytes, sp.UpError
+				res.DownSamples, res.UpSamples = sp.DownSamples, sp.UpSamples
 			}
 		}
 		if err != nil {
@@ -212,9 +216,31 @@ func (p *prober) runJob(j agentproto.Job) {
 		res.Error = "this agent does not know job " + j.Kind
 	}
 	p.mu.Lock()
+	p.dropProgress(j.ID)
 	p.jobs = append(p.jobs, res)
 	p.mu.Unlock()
 	p.poke()
+}
+
+// progress tells the server how a running job is going. Only the latest
+// note is kept: the server wants where it is now.
+func (p *prober) progress(id string, pr agentproto.SpeedProgress) {
+	p.mu.Lock()
+	p.dropProgress(id)
+	p.jobs = append(p.jobs, agentproto.JobResult{ID: id, Partial: true, Progress: &pr})
+	p.mu.Unlock()
+	p.poke()
+}
+
+// dropProgress forgets the unsent progress notes of a job. p.mu is held.
+func (p *prober) dropProgress(id string) {
+	kept := p.jobs[:0]
+	for _, j := range p.jobs {
+		if !(j.ID == id && j.Partial) {
+			kept = append(kept, j)
+		}
+	}
+	p.jobs = kept
 }
 
 func (p *prober) poke() {

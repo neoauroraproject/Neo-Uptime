@@ -127,10 +127,11 @@ type xrayHub struct {
 	asked   map[int64]time.Time   // when the agent first got the test
 	jobs    map[int64][]agentproto.Job
 	waiters map[string]chan agentproto.JobResult
+	partial map[string]func(agentproto.JobResult) // progress notes of running jobs
 }
 
 func newXrayHub() *xrayHub {
-	return &xrayHub{results: map[int64]*probeEntry{}, asked: map[int64]time.Time{}, jobs: map[int64][]agentproto.Job{}, waiters: map[string]chan agentproto.JobResult{}}
+	return &xrayHub{results: map[int64]*probeEntry{}, asked: map[int64]time.Time{}, jobs: map[int64][]agentproto.Job{}, waiters: map[string]chan agentproto.JobResult{}, partial: map[string]func(agentproto.JobResult){}}
 }
 
 // take returns a monitor's latest result; fresh is true the first time.
@@ -160,6 +161,11 @@ var ErrAgentTooOld = errors.New("update it from the Servers page")
 // RunJob hands a one-off job to an agent and waits for its answer, which
 // comes with the agent's next report.
 func (mg *Manager) RunJob(ctx context.Context, agentID int64, job agentproto.Job) (agentproto.JobResult, error) {
+	return mg.runJob(ctx, agentID, job, nil)
+}
+
+// runJob is RunJob that also hears the agent's progress notes while the job runs.
+func (mg *Manager) runJob(ctx context.Context, agentID int64, job agentproto.Job, partial func(agentproto.JobResult)) (agentproto.JobResult, error) {
 	a, err := mg.db.GetAgent(ctx, agentID)
 	if err != nil {
 		return agentproto.JobResult{}, errors.New("that server does not exist")
@@ -179,10 +185,14 @@ func (mg *Manager) RunJob(ctx context.Context, agentID int64, job agentproto.Job
 	h.mu.Lock()
 	h.jobs[a.ID] = append(h.jobs[a.ID], job)
 	h.waiters[job.ID] = ch
+	if partial != nil {
+		h.partial[job.ID] = partial
+	}
 	h.mu.Unlock()
 	defer func() {
 		h.mu.Lock()
 		delete(h.waiters, job.ID)
+		delete(h.partial, job.ID)
 		q := h.jobs[a.ID][:0]
 		for _, j := range h.jobs[a.ID] {
 			if j.ID != job.ID {
@@ -224,7 +234,14 @@ func (mg *Manager) agentReply(a *store.Agent, r *agentproto.Report) AgentReply {
 		h.results[pr.ID] = &probeEntry{res: pr, got: time.Now()}
 		kick = append(kick, pr.ID)
 	}
+	var notes []func()
 	for _, jr := range r.Jobs {
+		if jr.Partial {
+			if cb := h.partial[jr.ID]; cb != nil {
+				notes = append(notes, func() { cb(jr) })
+			}
+			continue
+		}
 		if ch, ok := h.waiters[jr.ID]; ok {
 			select {
 			case ch <- jr:
@@ -248,6 +265,9 @@ func (mg *Manager) agentReply(a *store.Agent, r *agentproto.Report) AgentReply {
 			Every: max(m.Interval, 10), Timeout: max(m.Timeout, 5)})
 	}
 	h.mu.Unlock()
+	for _, f := range notes {
+		f()
+	}
 	for _, id := range kick {
 		mg.Kick(id)
 	}
