@@ -6,6 +6,7 @@
 package api
 
 import (
+	"bufio"
 	"bytes"
 	"context"
 	"encoding/base64"
@@ -17,6 +18,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -233,6 +235,7 @@ func TestSpeedTestOfConfig(t *testing.T) {
 	h := newHarness(t)
 	h.do("POST", "/api/auth/setup", `{"username":"admin","password":"long-enough-pw"}`, true)
 	zero := make([]byte, 64<<10)
+	var slow atomic.Bool // a line of about 50 Mbps, so a phase lasts its full time
 	speed := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if !strings.Contains(r.UserAgent(), "Mozilla") { // as Cloudflare's does
 			w.WriteHeader(http.StatusForbidden)
@@ -248,9 +251,19 @@ func TestSpeedTestOfConfig(t *testing.T) {
 				if _, err := w.Write(zero); err != nil {
 					return
 				}
+				if slow.Load() {
+					time.Sleep(10 * time.Millisecond)
+				}
 			}
 		case "/__up":
-			_, _ = io.Copy(io.Discard, r.Body)
+			for {
+				if _, err := io.CopyN(io.Discard, r.Body, 64<<10); err != nil {
+					return
+				}
+				if slow.Load() {
+					time.Sleep(10 * time.Millisecond)
+				}
+			}
 		}
 	}))
 	defer speed.Close()
@@ -330,10 +343,55 @@ func TestSpeedTestOfConfig(t *testing.T) {
 	if sp, _ := st["result"].(map[string]any); sp["down"].(float64) < 5 || sp["from"] != nil {
 		t.Fatalf("direct test on the panel: %v", st)
 	}
-	st, _ = runSpeed(fmt.Sprintf(`{"direct":true,"agentId":%d,"provider":"cloudflare"}`, agentID))
+	slow.Store(true)
+	// Followed as a stream this time: every reading arrives on its own, and
+	// the agent sends them well under a second apart.
+	code, out := h.do("POST", "/api/xray/speed", fmt.Sprintf(`{"direct":true,"agentId":%d,"provider":"cloudflare"}`, agentID), true)
+	if code != 200 || out["id"] == nil {
+		t.Fatalf("start: %d %v", code, out)
+	}
+	resp, err := (&http.Client{Jar: h.client.Jar}).Get(h.srv.URL + "/api/xray/speed/" + out["id"].(string) + "/stream")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	if ct := resp.Header.Get("Content-Type"); ct != "text/event-stream" {
+		t.Fatalf("stream content type %q", ct)
+	}
+	var times []time.Time
+	st = nil
+	sc := bufio.NewScanner(resp.Body)
+	sc.Buffer(make([]byte, 1<<20), 1<<20)
+	for sc.Scan() {
+		data, ok := strings.CutPrefix(sc.Text(), "data: ")
+		if !ok {
+			continue
+		}
+		var ev map[string]any
+		if err := json.Unmarshal([]byte(data), &ev); err != nil {
+			t.Fatalf("bad event %q: %v", data, err)
+		}
+		if ev["progress"] != nil && ev["state"] == "running" {
+			times = append(times, time.Now())
+		}
+		st = ev
+	}
+	if st == nil || st["state"] != "done" {
+		t.Fatalf("the stream should end with the result: %v", st)
+	}
 	if sp, _ := st["result"].(map[string]any); sp["down"].(float64) < 5 || sp["from"] != "Iran" {
 		t.Fatalf("direct test on the agent: %v", st)
 	}
+	gaps := 0
+	for i := 1; i < len(times); i++ {
+		if times[i].Sub(times[i-1]) > 1200*time.Millisecond {
+			gaps++
+		}
+	}
+	if len(times) < 15 || gaps > 1 {
+		t.Fatalf("readings from the agent should stream: %d events, %d long gaps", len(times), gaps)
+	}
+	slow.Store(false)
 	_, list := h.do("GET", fmt.Sprintf("/api/agents/%d", agentID), "", false)
 	if v, _ := list["agent"].(map[string]any); v == nil {
 		t.Fatalf("agent view: %v", list)

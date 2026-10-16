@@ -95,7 +95,7 @@ function Dial({ value, color, label, unit, idle }: { value: number; color: strin
       })}
       <line x1={CX} y1={CY} x2={nx} y2={ny} stroke="#fff" strokeWidth="3" strokeLinecap="round" opacity={idle ? 0.35 : 1} />
       <circle cx={CX} cy={CY} r="9" fill="#0b1226" stroke={color} strokeWidth="3" />
-      <text x={CX} y="188" fill={color} fontSize="13" fontWeight="700" textAnchor="middle" letterSpacing="2" fontFamily="inherit">{label.toUpperCase()}</text>
+      {!idle && <text x={CX} y="188" fill={color} fontSize="13" fontWeight="700" textAnchor="middle" letterSpacing="2" fontFamily="inherit">{label.toUpperCase()}</text>}
       <text x={CX} y="236" fill="#fff" fontSize="46" fontWeight="600" textAnchor="middle" fontFamily="inherit" style={{ fontVariantNumeric: 'tabular-nums' }}>{idle ? '—' : unit === 'Mbps' ? mbps(shown) : n(Math.round(shown * 10) / 10, 1)}</text>
       <text x={CX} y="258" fill="rgba(255,255,255,0.6)" fontSize="13" textAnchor="middle" fontFamily="inherit">{unit}</text>
     </svg>
@@ -149,6 +149,28 @@ function Tile({ icon, label, value, unit, sub, color, active }: { icon: React.Re
   )
 }
 
+/** How far the test is: ping, download, upload, each filling as it runs. */
+function Steps({ phase, pct }: { phase: string; pct: number }) {
+  const t = useT()
+  const order = ['ping', 'download', 'upload'] as const
+  const at = order.indexOf(phase as (typeof order)[number])
+  const done = order.map((_, i) => (at < 0 ? 0 : i < at ? 1 : i === at ? Math.min(1, Math.max(0.02, pct)) : 0))
+  const names = { ping: t('Ping'), download: t('Download'), upload: t('Upload') }
+  return (
+    <div className="grid grid-cols-3 gap-2" role="progressbar" aria-label={t('Speed test progress')} aria-valuemin={0} aria-valuemax={100}
+      aria-valuenow={Math.round(((at < 0 ? 0 : at) + (done[Math.max(0, at)] ?? 0)) * 100 / 3)}>
+      {order.map((k, i) => (
+        <div key={k}>
+          <div className="h-1.5 rounded-full bg-white/10 overflow-hidden">
+            <div className="h-full rounded-full" style={{ width: `${done[i] * 100}%`, transition: 'width 260ms linear', background: COLORS[k], boxShadow: i === at ? `0 0 10px ${COLORS[k]}` : undefined }} />
+          </div>
+          <p className={clsx('mt-1 text-[11px] text-center', i === at ? 'text-white' : 'text-white/40')}>{names[k]}</p>
+        </div>
+      ))}
+    </div>
+  )
+}
+
 /** The big round button that starts a test, as in the apps. */
 function Go({ onClick, again }: { onClick: () => void; again?: boolean }) {
   const t = useT()
@@ -189,7 +211,8 @@ export function SpeedDialog({ open, onClose, title, monitorId, direct, agentId, 
   const [from, setFrom] = useState(agentId ?? 0)
   const [provider, setProvider] = useState<Provider>(savedProvider)
   const [job, setJob] = useState<Job | null>(null)
-  const run = useRef(0) // which start the polling belongs to
+  const run = useRef(0) // which start the stream or polling belongs to
+  const stream = useRef<EventSource | null>(null)
   const now = useNow(1000)
 
   useEffect(() => {
@@ -198,6 +221,7 @@ export function SpeedDialog({ open, onClose, title, monitorId, direct, agentId, 
       setJob(null)
     } else {
       run.current++ // closing stops following the test; it finishes on its own
+      stream.current?.close()
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open])
@@ -211,17 +235,41 @@ export function SpeedDialog({ open, onClose, title, monitorId, direct, agentId, 
         setJob({ state: 'error', error: r.error || t('The speed test failed.') })
         return
       }
+      // Each reading arrives as it is taken (about five a second) over a
+      // stream; where a proxy holds streams back, polling takes over.
+      const apply = (j: Job) => {
+        if (run.current !== mine) return true
+        setJob(j)
+        if (j.state === 'done' && j.result) onResult?.(j.result)
+        return j.state === 'done' || j.state === 'error'
+      }
+      const ended = await new Promise<boolean>((resolve) => {
+        if (typeof EventSource === 'undefined') return resolve(false)
+        const es = new EventSource(`/api/xray/speed/${r.id}/stream`)
+        stream.current = es
+        let over = false
+        es.onmessage = (e) => {
+          try {
+            if (apply(JSON.parse(e.data))) {
+              over = true
+              es.close()
+              resolve(true)
+            }
+          } catch {
+            /* a malformed event: the next one replaces it */
+          }
+        }
+        es.onerror = () => {
+          es.close()
+          if (!over) resolve(run.current !== mine)
+        }
+      })
+      if (ended) return
       for (;;) {
         await new Promise((res) => setTimeout(res, 350))
         if (run.current !== mine) return
-        const j = await api.get<{ state: Job['state']; progress?: SpeedProgress; result?: SpeedResult; error?: string }>(`/api/xray/speed/${r.id}`)
-        if (run.current !== mine) return
-        setJob(j)
-        if (j.state === 'done' && j.result) {
-          onResult?.(j.result)
-          return
-        }
-        if (j.state === 'error') return
+        const j = await api.get<Job>(`/api/xray/speed/${r.id}`)
+        if (apply(j)) return
       }
     } catch (e) {
       if (run.current === mine) setJob({ state: 'error', error: (e as Error).message })
@@ -261,6 +309,7 @@ export function SpeedDialog({ open, onClose, title, monitorId, direct, agentId, 
             )}
           </div>
           <Graph samples={samples} color={phase === 'upload' ? COLORS.upload : COLORS.download} height={56} className="-mt-3" />
+          <Steps phase={waiting ? 'server' : phase} pct={p?.pct ?? 0} />
           <div className="grid grid-cols-3 gap-2.5">
             <Tile icon={<Activity className="size-3.5" />} label={t('Ping')} color={COLORS.ping} active={phase === 'ping' && !waiting}
               value={p?.ping ? n(Math.round(p.ping * 10) / 10, 1) : '—'} unit="ms" sub={p?.ping ? `${t('Jitter')} ${n(Math.round((p.jitter ?? 0) * 10) / 10, 1)}` : undefined} />

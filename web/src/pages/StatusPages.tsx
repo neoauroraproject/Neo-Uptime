@@ -10,6 +10,7 @@ import { AdCard } from '../components/AdCard'
 
 export const themeMeta: Record<Theme, { name: string; desc: string; swatch: string[] }> = {
   zen: { name: 'Zen', desc: 'Nothing but the status — light or dark with the visitor', swatch: ['#f7f7f4', '#ffffff', '#22c55e'] },
+  pulse: { name: 'Pulse', desc: 'Dark panels with a glowing gauge and bold numbers', swatch: ['#141514', '#1b1c1b', '#5bd68d'] },
   aurora: { name: 'Aurora', desc: 'Dark with a green glow — the BackPack look', swatch: ['#050806', '#0b100c', '#22c55e'] },
   clarity: { name: 'Clarity', desc: 'Bright, airy and familiar', swatch: ['#f5f6f8', '#ffffff', '#4f46e5'] },
   lime: { name: 'Lime', desc: 'Bento cards with bold numbers', swatch: ['#efefec', '#ffffff', '#d4f36b'] },
@@ -43,6 +44,24 @@ export function ThemeSwatch({ theme, className }: { theme: Theme; className?: st
             </div>
           ))}
         </div>
+      </div>
+    )
+  }
+  if (theme === 'pulse') {
+    // A small copy of the theme's arc gauge.
+    return (
+      <div className={className} style={{ background: bg }} aria-hidden>
+        <svg viewBox="0 0 120 64" className="h-full w-full">
+          {Array.from({ length: 11 }).map((_, i) => {
+            const deg = 180 - ((i + 0.5) * 180) / 11
+            const r = (deg * Math.PI) / 180
+            return (
+              <rect key={i} x={-4} y={-5} width={8} height={10} rx={2.5} transform={`translate(${60 + 40 * Math.cos(r)} ${56 - 40 * Math.sin(r)}) rotate(${90 - deg})`}
+                fill={i < 9 ? accent : card} opacity={i < 9 ? 0.45 + (0.55 * i) / 8 : 1} />
+            )
+          })}
+          <rect x={46} y={40} width={28} height={9} rx={2} fill="#f3f5f3" opacity={0.9} />
+        </svg>
       </div>
     )
   }
@@ -101,7 +120,7 @@ export default function StatusPages() {
   }
 
   return (
-    <div className="p-4 sm:p-6 lg:p-8 space-y-6 max-w-[1400px]">
+    <div className="p-4 sm:p-6 lg:p-8 space-y-6 w-full max-w-[1440px] mx-auto">
       <div className="flex flex-wrap items-end justify-between gap-4">
         <div>
           <h1 className="font-display text-[28px] font-semibold tracking-tight">{t('Status pages')}</h1>

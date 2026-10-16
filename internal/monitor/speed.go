@@ -118,7 +118,7 @@ func (r SpeedRequest) key() string {
 }
 
 // SpeedJob is a speed test running in the background, which the page
-// follows by polling.
+// follows as a stream of its changes (or by polling).
 type SpeedJob struct {
 	ID       string                    `json:"id"`
 	State    string                    `json:"state"` // queued | running | done | error
@@ -127,6 +127,7 @@ type SpeedJob struct {
 	Error    string                    `json:"error,omitempty"`
 	From     string                    `json:"from,omitempty"`
 	started  time.Time
+	changed  chan struct{} // closed, and replaced, at every change
 }
 
 // StartSpeedJob starts a speed test of a config in the background. id is the
@@ -150,7 +151,7 @@ func (mg *Manager) StartSpeedJob(req SpeedRequest) (string, error) {
 	}
 	b := make([]byte, 6)
 	_, _ = rand.Read(b)
-	job := &SpeedJob{ID: hex.EncodeToString(b), State: "queued", From: from, started: time.Now()}
+	job := &SpeedJob{ID: hex.EncodeToString(b), State: "queued", From: from, started: time.Now(), changed: make(chan struct{})}
 
 	mg.speedMu.Lock()
 	if k := req.key(); k != "" {
@@ -172,6 +173,8 @@ func (mg *Manager) StartSpeedJob(req SpeedRequest) (string, error) {
 	set := func(f func(*SpeedJob)) {
 		mg.speedMu.Lock()
 		f(job)
+		close(job.changed)
+		job.changed = make(chan struct{})
 		mg.speedMu.Unlock()
 	}
 	go func() {
@@ -203,6 +206,18 @@ func (mg *Manager) SpeedJobState(id string) (SpeedJob, bool) {
 		return SpeedJob{}, false
 	}
 	return *j, true
+}
+
+// WatchSpeedJob is SpeedJobState with a channel that is closed when the test
+// next changes, so a stream can send each reading as it comes.
+func (mg *Manager) WatchSpeedJob(id string) (SpeedJob, <-chan struct{}, bool) {
+	mg.speedMu.Lock()
+	defer mg.speedMu.Unlock()
+	j, ok := mg.speedJobs[id]
+	if !ok {
+		return SpeedJob{}, nil, false
+	}
+	return *j, j.changed, true
 }
 
 // SpeedTest measures a config's speed or a server's own connection, here or

@@ -248,6 +248,30 @@ html[lang="fa"] .font-display { letter-spacing: 0; }
   --bar-empty: #232323;
   --shadow-card: none;
 }
+/* Pulse: charcoal panels and one glowing mint gauge. Always dark. */
+.sp[data-sp-theme="pulse"] {
+  color-scheme: dark;
+  --bg: #141514;
+  --surface: #1b1c1b;
+  --surface-2: #222322;
+  --surface-3: #2b2c2b;
+  --border: #262726;
+  --border-strong: #353735;
+  --text: #f3f5f3;
+  --text-2: #a0a4a0;
+  --text-3: #727672;
+  --accent: #5bd68d;
+  --accent-ink: #6fe09f;
+  --accent-soft: rgb(91 214 141 / 0.12);
+  --on-accent: #06140c;
+  --up: #5bd68d;
+  --down: #ff6161;
+  --pending: #f5b03a;
+  --maint: #7c9bff;
+  --chart: #5bd68d;
+  --bar-empty: #2a2b2a;
+  --shadow-card: 0 1px 0 rgb(255 255 255 / 0.035) inset, 0 24px 48px -28px rgb(0 0 0 / 0.9);
+}
 
 /* ---------- base ---------- */
 
@@ -265,6 +289,10 @@ html[lang="fa"] .font-display { letter-spacing: 0; }
 @keyframes fade-up {
   from { opacity: 0; transform: translateY(6px); }
   to { opacity: 1; transform: none; }
+}
+
+@keyframes seg-in {
+  from { opacity: 0; transform: scale(0.6); }
 }
 
 @keyframes shimmer {
@@ -286,6 +314,12 @@ html[lang="fa"] .font-display { letter-spacing: 0; }
 .bidi-auto > *,
 .bidi-auto > * > * {
   unicode-bidi: plaintext;
+}
+
+/* Persian digits are not in the monospace face: Pulse's numbers switch to
+   Vazirmatn. In the utilities layer, so it outranks .font-mono. */
+@layer utilities {
+  html[lang="fa"] .pulse-num { font-family: var(--font-display); }
 }
 
 /* Global rules sit in layers so that utilities on an element always win:
@@ -366,6 +400,37 @@ html[lang="fa"] .font-display { letter-spacing: 0; }
   .live-dot { animation: pulse-ring 2s cubic-bezier(.4,0,.6,1) infinite; }
   .beat-new { animation: beat-in 260ms cubic-bezier(.2,.8,.2,1) both; transform-origin: bottom; }
   .fade-up { animation: fade-up 240ms cubic-bezier(.2,.8,.2,1) both; }
+  /* Pulse status theme */
+  .pulse-panel {
+    background: linear-gradient(180deg, color-mix(in srgb, var(--surface) 92%, #fff 3%), var(--surface) 55%);
+    border: 1px solid var(--border);
+    border-radius: 28px;
+    box-shadow: var(--shadow-card);
+  }
+  .pulse-tiles {
+    background:
+      radial-gradient(closest-side, transparent 60%, var(--surface) 100%),
+      repeating-linear-gradient(0deg, transparent 0 62px, rgb(0 0 0 / 0.35) 62px 64px),
+      repeating-linear-gradient(90deg, transparent 0 62px, rgb(0 0 0 / 0.35) 62px 64px),
+      var(--surface);
+  }
+  .pulse-seg {
+    transform-box: fill-box;
+    transform-origin: center;
+    animation: seg-in 520ms cubic-bezier(.2, .8, .2, 1) both;
+  }
+  .pulse-col {
+    display: block;
+    border-radius: 4px 4px 0 0;
+    background: linear-gradient(180deg, #353735, #262726);
+    border-top: 3px solid #5b5e5b;
+    transition: height 300ms cubic-bezier(.2, .8, .2, 1);
+  }
+  .pulse-col-on {
+    background: repeating-linear-gradient(135deg, rgb(91 214 141 / 0.30) 0 2px, rgb(91 214 141 / 0.12) 2px 7px);
+    border-top-color: var(--accent);
+    box-shadow: 0 -6px 18px -6px rgb(91 214 141 / 0.55);
+  }
   .skeleton {
     background: linear-gradient(90deg, var(--surface-2) 0, var(--surface-3) 40%, var(--surface-2) 80%);
     background-size: 800px 100%;

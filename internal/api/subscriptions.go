@@ -2,7 +2,9 @@ package api
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"net/url"
 	"strings"
@@ -414,4 +416,59 @@ func (s *Server) handleSpeedState(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, j)
+}
+
+// handleSpeedStream sends a speed test's state as server-sent events, each
+// reading as soon as it arrives, until the test ends.
+func (s *Server) handleSpeedStream(w http.ResponseWriter, r *http.Request) {
+	flusher, ok := w.(http.Flusher)
+	if !ok {
+		writeErr(w, http.StatusInternalServerError, "streaming unsupported")
+		return
+	}
+	id := r.PathValue("id")
+	if _, _, ok := s.mgr.WatchSpeedJob(id); !ok {
+		writeErr(w, http.StatusNotFound, "no such speed test")
+		return
+	}
+	w.Header().Set("Content-Type", "text/event-stream")
+	w.Header().Set("Cache-Control", "no-cache")
+	w.Header().Set("X-Accel-Buffering", "no") // nginx: do not buffer the stream
+	ping := time.NewTicker(15 * time.Second)
+	defer ping.Stop()
+	for {
+		j, changed, ok := s.mgr.WatchSpeedJob(id)
+		if !ok {
+			return
+		}
+		b, _ := json.Marshal(j)
+		if _, err := fmt.Fprintf(w, "data: %s\n\n", b); err != nil {
+			return
+		}
+		flusher.Flush()
+		if j.State == "done" || j.State == "error" {
+			return
+		}
+	wait:
+		for {
+			select {
+			case <-r.Context().Done():
+				return
+			case <-changed:
+				break wait
+			case <-ping.C:
+				if _, err := fmt.Fprint(w, ": ping\n\n"); err != nil {
+					return
+				}
+				flusher.Flush()
+			}
+		}
+		// Readings come about five times a second; a short pause lets a burst
+		// of them go out as one.
+		select {
+		case <-r.Context().Done():
+			return
+		case <-time.After(60 * time.Millisecond):
+		}
+	}
 }

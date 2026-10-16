@@ -370,7 +370,7 @@ export default function StatusPageEditor() {
   const openURL = pageURL({ slug: savedSlug, domain: p.domain }, https)
 
   return (
-    <div className="p-4 sm:p-6 lg:p-8 max-w-[1700px]">
+    <div className="p-4 sm:p-6 lg:p-8 w-full max-w-[1440px] mx-auto">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="min-w-0">
           <Link to="/status-pages" className="inline-flex items-center gap-1.5 text-sm text-muted hover:text-fg"><ArrowLeft className="size-4 rtl:rotate-180" />{t('Status pages')}</Link>
@@ -423,9 +423,9 @@ export default function StatusPageEditor() {
                 <Field label={t('Theme')}>
                   <div className="grid grid-cols-2 gap-3" role="radiogroup" aria-label={t('Theme')}>
                     {(Object.keys(themeMeta) as Theme[]).map((th) => (
-                      <button key={th} role="radio" aria-checked={p.theme === th} onClick={() => up({ theme: th })} className={clsx('text-start rounded-2xl border-2 overflow-hidden transition-colors', p.theme === th ? 'border-accent' : 'border-line hover:border-line-strong', th === 'zen' && 'col-span-2')}>
-                        <ThemeSwatch theme={th} className={th === 'zen' ? 'h-16' : 'h-20'} />
-                        <div className="px-3 py-2"><p className="text-sm font-semibold">{themeMeta[th].name}{th === 'zen' && <span className="ms-2 text-[11px] text-accent-ink">{t('recommended')}</span>}</p><p className="text-[11.5px] text-muted leading-snug">{t(themeMeta[th].desc)}</p></div>
+                      <button key={th} role="radio" aria-checked={p.theme === th} onClick={() => up({ theme: th })} className={clsx('text-start rounded-2xl border-2 overflow-hidden transition-colors', p.theme === th ? 'border-accent' : 'border-line hover:border-line-strong', (th === 'zen' || th === 'pulse') && 'col-span-2')}>
+                        <ThemeSwatch theme={th} className={th === 'zen' || th === 'pulse' ? 'h-16' : 'h-20'} />
+                        <div className="px-3 py-2"><p className="text-sm font-semibold">{themeMeta[th].name}{th === 'zen' && <span className="ms-2 text-[11px] text-accent-ink">{t('recommended')}</span>}{th === 'pulse' && <span className="ms-2 text-[11px] text-accent-ink">{t('new')}</span>}</p><p className="text-[11.5px] text-muted leading-snug">{t(themeMeta[th].desc)}</p></div>
                       </button>
                     ))}
                   </div>

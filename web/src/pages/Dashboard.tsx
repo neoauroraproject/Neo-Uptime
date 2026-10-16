@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react'
 import { Link, Outlet, useNavigate, useParams } from 'react-router-dom'
-import { ChevronRight, CircleCheck, ListFilter, Pause, Play, Search, SquareCheckBig, Trash2, X } from 'lucide-react'
+import { ChevronRight, ChevronsDownUp, ChevronsUpDown, CircleCheck, ListFilter, Pause, Play, Search, SquareCheckBig, Trash2, X } from 'lucide-react'
 import { api } from '../lib/api'
 import { canEdit, useApp } from '../lib/store'
 import { clsx, pct, statusKey, uptimeTone } from '../lib/format'
@@ -55,9 +55,10 @@ function Row({ m, depth, selected, selecting, checked, onCheck, childCount, coll
       style={{ paddingInlineStart: 12 + depth * 18 }}
     >
       {selected && <span className="absolute start-0 top-3 bottom-3 w-[3px] rounded-full bg-accent" aria-hidden />}
-      {selecting && <Checkbox checked={checked} onChange={onCheck} label={<span className="sr-only">{t('Select {name}', { name: m.name })}</span>} />}
+      {/* Above the row link's full-size click area, so they act instead of opening the monitor. */}
+      {selecting && <Checkbox className="relative z-10" checked={checked} onChange={onCheck} label={<span className="sr-only">{t('Select {name}', { name: m.name })}</span>} />}
       {childCount !== undefined ? (
-        <button onClick={onToggle} aria-label={collapsed ? t('Expand {name}', { name: m.name }) : t('Collapse {name}', { name: m.name })} aria-expanded={!collapsed} className="grid place-items-center size-6 -mx-1 rounded-md text-muted hover:text-fg hover:bg-surface-3">
+        <button onClick={onToggle} aria-label={collapsed ? t('Expand {name}', { name: m.name }) : t('Collapse {name}', { name: m.name })} aria-expanded={!collapsed} className="relative z-10 grid place-items-center size-7 -mx-1.5 rounded-lg text-muted hover:text-fg hover:bg-surface-3">
           <ChevronRight className={clsx('size-4 transition-transform', !collapsed ? 'rotate-90' : 'rtl:-scale-x-100')} />
         </button>
       ) : null}
@@ -100,16 +101,19 @@ export function MonitorList({ selectedId }: { selectedId?: number }) {
     }
   })
 
-  const toggleCollapse = (id: number) => {
-    const nx = new Set(collapsed)
-    if (nx.has(id)) nx.delete(id)
-    else nx.add(id)
+  const saveCollapsed = (nx: Set<number>) => {
     setCollapsed(nx)
     try {
       localStorage.setItem('neo-collapsed', JSON.stringify([...nx]))
     } catch {
       /* not persisted */
     }
+  }
+  const toggleCollapse = (id: number) => {
+    const nx = new Set(collapsed)
+    if (nx.has(id)) nx.delete(id)
+    else nx.add(id)
+    saveCollapsed(nx)
   }
 
   const all = Object.values(monitors)
@@ -147,6 +151,9 @@ export function MonitorList({ selectedId }: { selectedId?: number }) {
     return out
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [monitors, q, filter, tagFilter, collapsed])
+
+  const groupIds = all.filter((m) => m.type === 'group' || all.some((c) => c.parentId === m.id)).map((m) => m.id)
+  const allCollapsed = groupIds.length > 0 && groupIds.every((id) => collapsed.has(id))
 
   const bulk = async (action: 'pause' | 'resume' | 'delete') => {
     const ids = [...picked]
@@ -198,6 +205,11 @@ export function MonitorList({ selectedId }: { selectedId?: number }) {
             <button className="text-[12.5px] text-muted hover:text-fg" onClick={() => { setFilter('all'); setTagFilter(null) }}>{t('Reset')}</button>
           )}
           <div className="ms-auto flex items-center gap-1">
+            {groupIds.length > 0 && (
+              <IconButton size="sm" label={allCollapsed ? t('Expand all groups') : t('Collapse all groups')} onClick={() => saveCollapsed(allCollapsed ? new Set() : new Set(groupIds))}>
+                {allCollapsed ? <ChevronsUpDown className="size-4" /> : <ChevronsDownUp className="size-4" />}
+              </IconButton>
+            )}
             {canEdit(role) && (
               <IconButton size="sm" label={selecting ? t('Stop selecting') : t('Select monitors')} onClick={() => { setSelecting(!selecting); setPicked(new Set()) }} className={selecting ? 'text-accent-ink bg-accent-soft' : ''}>
                 <SquareCheckBig className="size-4" />

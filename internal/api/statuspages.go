@@ -18,7 +18,7 @@ import (
 
 var slugRe = regexp.MustCompile(`^[a-z0-9][a-z0-9-]{0,62}$`)
 
-var themes = []string{"zen", "aurora", "clarity", "lime", "noir"}
+var themes = []string{"zen", "pulse", "aurora", "clarity", "lime", "noir"}
 var layouts = []string{"list", "cards"}
 
 // ---------- admin ----------

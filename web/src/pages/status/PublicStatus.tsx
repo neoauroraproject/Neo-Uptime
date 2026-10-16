@@ -9,23 +9,24 @@ import { AreaChart, Columns, DayBars, HeartbeatBar, Sparkline, type DayBucket } 
 import { TunnelBadges } from '../../components/tunnel'
 import { Spinner, TagChip, useNow } from '../../components/ui'
 import { Flag } from '../../components/flag'
+import Pulse from './Pulse'
 
-interface PubBeat { s: 0 | 1 | 2 | 3; t: number; p?: number }
+export interface PubBeat { s: 0 | 1 | 2 | 3; t: number; p?: number }
 // Hidden details are missing, not empty.
-interface PubTunnel { source?: string; state: string; direction?: string; carrier?: string; preset?: string; tunnelPort?: string; uptime?: string; inBytes?: number; outBytes?: number; totalBytes?: number; peerCountry?: string; peerLocation?: string; kcpLoss?: number }
-interface PubMonitor {
+export interface PubTunnel { source?: string; state: string; direction?: string; carrier?: string; preset?: string; tunnelPort?: string; uptime?: string; inBytes?: number; outBytes?: number; totalBytes?: number; peerCountry?: string; peerLocation?: string; kcpLoss?: number }
+export interface PubMonitor {
   id: number; name: string; type: string; country?: string; url?: string; tags?: { tagId: number; name: string; color: string; value: string }[]
   status: number; ping: number | null; uptime24: number; uptime30: number; avgPing: number; certDays?: number; tunnel?: PubTunnel
   beats: PubBeat[]; days?: DayBucket[]
 }
-interface PubPage {
+export interface PubPage {
   slug: string; title: string; description: string; theme: Theme; layout: 'list' | 'cards'; barMode: 'heartbeat' | 'days'
   accentColor: string; logo: string; footer: string; customCss: string; showTags: boolean; showCertExpiry: boolean
   showPoweredBy: boolean; showCharts: boolean; refreshInterval: number; published: boolean
   language: 'auto' | 'en' | 'fa'; showUptime: boolean; showLatency: boolean; showBanner: boolean
   barDays?: number; domain?: string; hide?: HideKey[]
 }
-interface PubData {
+export interface PubData {
   page: PubPage
   groups: { name: string; monitors: PubMonitor[] }[]
   overall: 'operational' | 'partial' | 'major' | 'maintenance' | 'unknown'
@@ -34,27 +35,27 @@ interface PubData {
   updatedAt: number
 }
 
-const overallKey = {
+export const overallKey = {
   operational: 'All systems operational',
   partial: 'Partial outage',
   major: 'Major outage',
   maintenance: 'Under maintenance',
   unknown: 'Waiting for data',
 }
-const overallColor = { operational: 'var(--up)', partial: 'var(--pending)', major: 'var(--down)', maintenance: 'var(--maint)', unknown: 'var(--text-3)' }
+export const overallColor = { operational: 'var(--up)', partial: 'var(--pending)', major: 'var(--down)', maintenance: 'var(--maint)', unknown: 'var(--text-3)' }
 
-const cc = (m: PubMonitor) => m.country || m.tunnel?.peerCountry?.toLowerCase() || ''
-const shows = (page: PubPage, k: HideKey) => !page.hide?.includes(k)
+export const cc = (m: PubMonitor) => m.country || m.tunnel?.peerCountry?.toLowerCase() || ''
+export const shows = (page: PubPage, k: HideKey) => !page.hide?.includes(k)
 
-function Linkify({ text }: { text: string }) {
+export function Linkify({ text }: { text: string }) {
   const parts = text.split(/(https?:\/\/[^\s)]+)/g)
   return <>{parts.map((p, i) => (/^https?:\/\//.test(p) ? <a key={i} href={p} target="_blank" rel="noreferrer noopener" className="underline underline-offset-2" dir="ltr">{p}</a> : <span key={i}>{p}</span>))}</>
 }
 
-function statusWordKey(s: number) {
+export function statusWordKey(s: number) {
   return s === -2 ? 'Paused' : s === -1 ? 'No data' : s === 1 ? 'Operational' : s === 0 ? 'Down' : s === 3 ? 'Maintenance' : 'Degraded'
 }
-function statusColor(s: number) {
+export function statusColor(s: number) {
   const k = s < 0 ? 'paused' : statusKey(s as 0 | 1 | 2 | 3)
   return { up: 'var(--up)', down: 'var(--down)', pending: 'var(--pending)', maint: 'var(--maint)', paused: 'var(--text-3)', empty: 'var(--text-3)' }[k]
 }
@@ -135,7 +136,7 @@ const incStyle: Record<string, { color: string; icon: typeof Info }> = {
   maintenance: { color: 'var(--maint)', icon: Wrench },
 }
 
-function Notices({ d, rounded = 'rounded-2xl' }: { d: PubData; rounded?: string }) {
+export function Notices({ d, rounded = 'rounded-2xl' }: { d: PubData; rounded?: string }) {
   const t = useT()
   return (
     <>
@@ -167,7 +168,7 @@ function Notices({ d, rounded = 'rounded-2xl' }: { d: PubData; rounded?: string 
   )
 }
 
-function PoweredBy() {
+export function PoweredBy() {
   const t = useT()
   return (
     <a href="https://github.com/neoauroraproject/Neo-Uptime" target="_blank" rel="noreferrer noopener" className="inline-flex items-center gap-2 hover:text-fg">
@@ -325,7 +326,7 @@ function Banner({ d, theme }: { d: PubData; theme: Theme }) {
   )
 }
 
-function MonitorRow({ m, page, theme }: { m: PubMonitor; page: PubPage; theme: Theme }) {
+export function MonitorRow({ m, page, theme }: { m: PubMonitor; page: PubPage; theme: Theme }) {
   const t = useT()
   const [open, setOpen] = useState(false)
   const days = page.barMode === 'days' && m.days
@@ -368,7 +369,7 @@ function MonitorRow({ m, page, theme }: { m: PubMonitor; page: PubPage; theme: T
   )
 }
 
-function MonitorCardPub({ m, page, theme }: { m: PubMonitor; page: PubPage; theme: Theme }) {
+export function MonitorCardPub({ m, page, theme }: { m: PubMonitor; page: PubPage; theme: Theme }) {
   const t = useT()
   const bento = theme === 'lime' || theme === 'noir'
   const pings = m.beats.slice(-40).map((b) => (b.s === 1 ? b.p ?? null : null))
@@ -485,7 +486,7 @@ function Classic({ d, theme, layout, now, left }: { d: PubData; theme: Theme; la
 
 /* ---------- page ---------- */
 
-const themeBg: Record<Theme, string> = { zen: '', aurora: '#050806', clarity: '#f5f6f8', lime: '#efefec', noir: '#0a0a0a' }
+const themeBg: Record<Theme, string> = { zen: '', pulse: '#141514', aurora: '#050806', clarity: '#f5f6f8', lime: '#efefec', noir: '#0a0a0a' }
 
 function pickLang(pref: string | undefined): Lang {
   if (pref === 'fa' || pref === 'en') return pref
@@ -572,7 +573,7 @@ export default function PublicStatus({ slug: hostSlug }: { slug?: string } = {})
 
   useEffect(() => {
     const prev = document.body.style.background
-    const dark = theme === 'aurora' || theme === 'noir' || (theme === 'zen' && matchMedia('(prefers-color-scheme: dark)').matches)
+    const dark = theme === 'aurora' || theme === 'noir' || theme === 'pulse' || (theme === 'zen' && matchMedia('(prefers-color-scheme: dark)').matches)
     document.body.style.background = themeBg[theme] || (dark ? '#0b0c0d' : '#f7f7f4')
     document.documentElement.setAttribute('data-theme', dark ? 'dark' : 'light')
     return () => { document.body.style.background = prev }
@@ -602,7 +603,7 @@ export default function PublicStatus({ slug: hostSlug }: { slug?: string } = {})
       {page.customCss && <style>{page.customCss}</style>}
       {theme === 'aurora' && <div className="pointer-events-none fixed inset-0 [background:radial-gradient(900px_420px_at_50%_-10%,rgb(34_197_94/0.12),transparent_70%)]" aria-hidden />}
       {!page.published && <div className="relative mx-auto max-w-4xl px-4 pt-4"><div className="rounded-xl border border-pending/40 bg-pending/10 px-4 py-2 text-[13px] text-pending">{t('Draft — only signed-in users can see this page.')}</div></div>}
-      {theme === 'zen' ? <Zen d={d} now={now} left={left} /> : <Classic d={d} theme={theme} layout={layout} now={now} left={left} />}
+      {theme === 'zen' ? <Zen d={d} now={now} left={left} /> : theme === 'pulse' ? <Pulse d={d} layout={layout} now={now} left={left} /> : <Classic d={d} theme={theme} layout={layout} now={now} left={left} />}
     </div>
   )
 }

@@ -290,7 +290,7 @@ export default function Configs() {
   const loose = filtered.filter((m) => !m.config.subscriptionId || !subs.some((s) => s.id === m.config.subscriptionId))
 
   return (
-    <div className="p-4 sm:p-6 lg:p-8 space-y-6 max-w-[1600px]">
+    <div className="p-4 sm:p-6 lg:p-8 space-y-6 w-full max-w-[1440px] mx-auto">
       <div className="flex flex-wrap items-end justify-between gap-4">
         <div>
           <h1 className="font-display text-[28px] font-semibold tracking-tight">{t('V2Ray configs')}</h1>

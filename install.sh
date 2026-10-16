@@ -3,12 +3,14 @@
 #
 #   bash <(curl -fsSL https://raw.githubusercontent.com/neoauroraproject/Neo-Uptime/main/install.sh)
 #
-# On a new server it installs Neo Uptime. Where it is already installed it shows
-# a menu: update, change the port, restart, status and logs, reset a password,
+# On a new server it installs Neo Uptime and the `neouptime` command. Where it
+# is already installed, `neouptime` (or this script again) shows a menu: update,
+# reset the admin password, change the port, restart, status and logs,
 # uninstall. Every action also has a flag, for scripts:
 #
 #   --port N          port for a new install (default 7788)
 #   --update          update to the latest release (or --version vX.Y.Z)
+#   --reset-admin     forgotten password: set a new admin password (asks for it)
 #   --set-port N      change the port of an installed Neo Uptime
 #   --restart         restart the service
 #   --status          show the service status and recent logs
@@ -21,6 +23,7 @@ set -euo pipefail
 
 REPO="neoauroraproject/Neo-Uptime"
 BIN="/usr/local/bin/neo-uptime"
+CLI="/usr/local/bin/neouptime"
 DATA_DIR="/var/lib/neo-uptime"
 CONF_DIR="/etc/neo-uptime"
 ENV_FILE="$CONF_DIR/neo-uptime.env"
@@ -47,6 +50,7 @@ Neo Uptime installer and manager
   (no option)       install, or show the menu if Neo Uptime is already installed
   --port N          port for a new install (default 7788)
   --update          update to the latest release
+  --reset-admin     forgotten password: set a new admin password
   --set-port N      change the port
   --restart         restart the service
   --status          show status and recent logs
@@ -62,6 +66,7 @@ while [ $# -gt 0 ]; do
     --port) PORT="${2:-}"; shift 2 ;;
     --set-port) ACTION="port"; NEW_PORT="${2:-}"; shift 2 ;;
     --update|--upgrade) ACTION="update"; shift ;;
+    --reset-admin|--reset-password) ACTION="password"; shift ;;
     --restart) ACTION="restart"; shift ;;
     --status) ACTION="status"; shift ;;
     --version) VERSION="${2:-}"; shift 2 ;;
@@ -75,6 +80,10 @@ done
 
 [ "$(id -u)" -eq 0 ] || die "run as root (sudo -i, then the command again)"
 command -v systemctl >/dev/null 2>&1 || die "systemd is required"
+# A mirror given at install time is remembered, so `neouptime` updates use it too.
+if [ -z "$MIRROR" ] && [ -f "$ENV_FILE" ]; then
+  MIRROR="$(grep -E '^NEO_MIRROR=' "$ENV_FILE" | tail -n1 | cut -d= -f2- || true)"
+fi
 
 banner() {
   printf '%s' "$c_lime"
@@ -96,6 +105,14 @@ ask() { # prompt default → answer
   read -r ans </dev/tty || true
   printf '%s' "${ans:-$2}"
 }
+ask_secret() { # prompt → answer, not echoed
+  local ans=""
+  printf '%s' "$1" >&2
+  read -rs ans </dev/tty || true
+  printf '\n' >&2
+  printf '%s' "$ans"
+}
+pause() { [ -r /dev/tty ] && { printf '\n  %sPress Enter to go back to the menu%s' "$c_dim" "$c_off"; read -r _ </dev/tty || true; echo; }; }
 
 installed() { [ -x "$BIN" ] && [ -f "$UNIT" ]; }
 # The current ad from Neo Aurora's ad service; quiet and quick when there
@@ -157,6 +174,22 @@ latest_version() {
   printf '%s' "$v"
 }
 
+# The `neouptime` command is this script. It comes from the release archive
+# (from GitHub for releases before it was included), and is swapped in by rename
+# so that a running copy, mid-update, keeps reading its own file.
+install_cli() { # [script from the archive]
+  local src="${1:-}" tmp="$CLI.new"
+  if [ -n "$src" ] && [ -f "$src" ]; then
+    install -m 755 "$src" "$tmp"
+  elif ! fetch "${MIRROR}https://raw.githubusercontent.com/$REPO/main/install.sh" "$tmp" 2>/dev/null; then
+    rm -f "$tmp"
+    warn "Could not install the neouptime command; run this script again for the menu."
+    return 0
+  fi
+  chmod 755 "$tmp"
+  mv -f "$tmp" "$CLI"
+}
+
 # --- actions ------------------------------------------------------------------
 
 do_install() {
@@ -214,6 +247,7 @@ do_install() {
   chmod 750 "$DATA_DIR" "$CONF_DIR"
   install -m 755 "$TMP/neo-uptime" "$BIN.new"
   mv -f "$BIN.new" "$BIN"
+  install_cli "$TMP/install.sh"
 
   if [ ! -f "$ENV_FILE" ]; then
     cat > "$ENV_FILE" <<EOF
@@ -231,6 +265,10 @@ EOF
     chmod 640 "$ENV_FILE"
   elif [ -n "$PORT" ]; then
     sed -i -E "s/^NEO_UPTIME_PORT=.*/NEO_UPTIME_PORT=$PORT/" "$ENV_FILE"
+  fi
+  if [ -n "$MIRROR" ]; then
+    sed -i -E '/^NEO_MIRROR=/d' "$ENV_FILE"
+    printf 'NEO_MIRROR=%s\n' "$MIRROR" >> "$ENV_FILE"
   fi
   PORT="$(current_port)"
 
@@ -269,7 +307,7 @@ EOF
   ok "Neo Uptime $VERSION is running"
   echo
   printf '  %sOpen%s        http://%s:%s\n' "$c_lime" "$c_off" "$(public_ip)" "$PORT"
-  printf '  %sManage%s      run this command again for the menu (update, port, uninstall)\n' "$c_dim" "$c_off"
+  printf '  %sManage%s      run %sneouptime%s for the menu (update, password, port, uninstall)\n' "$c_lime" "$c_off" "$c_bold" "$c_off"
   printf '  %sLogs%s        journalctl -u neo-uptime -f\n' "$c_dim" "$c_off"
   printf '  %sNews%s        %s\n' "$c_dim" "$c_off" "$CHANNEL"
   echo
@@ -319,20 +357,57 @@ do_status() {
   journalctl -u neo-uptime -n 30 --no-pager 2>/dev/null || true
 }
 
+# Forgotten password: a new password for the owner (or another admin), with
+# two-factor sign-in turned off and every session signed out.
 do_password() {
   installed || die "Neo Uptime is not installed"
-  "$BIN" list-users || true
-  local user
-  user="$(ask "  User to reset: " "")"
-  [ -n "$user" ] || return 0
-  "$BIN" reset-password "$user"
-  ok "$user was signed out everywhere; sign in with the new password"
+  interactive || die "run it in a terminal: neouptime --reset-admin"
+  local user="" name="" pw="" pw2=""
+  echo "  Accounts:"
+  "$BIN" list-users --data "$DATA_DIR" 2>/dev/null | sed 's/^/    /' || true
+  echo
+  user="$(ask "  Account to reset [the owner]: " "")"
+  name="$(ask "  New username (Enter keeps it): " "")"
+  while :; do
+    pw="$(ask_secret "  New password (Enter makes a random one): ")"
+    [ -z "$pw" ] && break
+    if [ "${#pw}" -lt 8 ]; then warn "Use at least 8 characters."; continue; fi
+    pw2="$(ask_secret "  Repeat the new password: ")"
+    [ "$pw" = "$pw2" ] && break
+    warn "The two passwords differ — type them again."
+  done
+  local args=(reset-admin --data "$DATA_DIR")
+  [ -n "$user" ] && args+=(--user "$user")
+  [ -n "$name" ] && args+=(--username "$name")
+  echo
+  if [ -n "$pw" ]; then
+    printf '%s\n' "$pw" | "$BIN" "${args[@]}" --password-stdin || { warn "Nothing was changed."; return 0; }
+  else
+    "$BIN" "${args[@]}" || { warn "Nothing was changed."; return 0; }
+  fi
+  # The restart also lifts the lockout after too many wrong passwords.
+  systemctl restart neo-uptime
+  wait_active
+  echo
+  ok "Sign in at http://$(public_ip):$(current_port)"
+}
+
+do_toggle() {
+  installed || die "Neo Uptime is not installed"
+  if systemctl is-active --quiet neo-uptime; then
+    systemctl stop neo-uptime
+    ok "Neo Uptime stopped; monitoring and status pages are paused until you start it"
+  else
+    systemctl start neo-uptime
+    wait_active
+    ok "Neo Uptime started"
+  fi
 }
 
 do_uninstall() {
   say "Stopping and removing the service"
   systemctl disable --now neo-uptime >/dev/null 2>&1 || true
-  rm -f "$UNIT" "$BIN"
+  rm -f "$UNIT" "$BIN" "$CLI"
   systemctl daemon-reload
   if [ "$PURGE" -eq 1 ]; then
     rm -rf "$DATA_DIR" "$CONF_DIR"
@@ -342,43 +417,56 @@ do_uninstall() {
   fi
 }
 
+# The menu comes back after each action until Exit, an uninstall, or Ctrl+C.
 menu() {
-  local version port state
-  version="$(current_version)"
-  port="$(current_port)"
-  if systemctl is-active --quiet neo-uptime; then state="${c_green}running${c_off}"; else state="${c_red}stopped${c_off}"; fi
-  printf '  Neo Uptime %s%s%s · port %s · %s\n' "$c_bold" "${version:-?}" "$c_off" "$port" "$state"
+  local ip choice
+  ip="$(public_ip)"
   show_ad
-  cat <<EOF
+  while installed; do
+    local version port state toggle
+    version="$(current_version)"
+    port="$(current_port)"
+    if systemctl is-active --quiet neo-uptime; then
+      state="${c_green}running${c_off}"; toggle="Stop"
+    else
+      state="${c_red}stopped${c_off}"; toggle="Start"
+    fi
+    printf '  Neo Uptime %s%s%s · %s\n' "$c_bold" "${version:-?}" "$c_off" "$state"
+    printf '  %sPanel%s  http://%s:%s\n\n' "$c_lime" "$c_off" "$ip" "$port"
+    cat <<EOF
   1) Update to the latest version
-  2) Change the port
-  3) Restart
-  4) Status and recent logs
-  5) Reset a user's password
-  6) Uninstall (keep the data)
-  7) Uninstall and delete all data
+  2) Forgot password — set a new admin password
+  3) Change the port
+  4) Restart
+  5) $toggle
+  6) Status and recent logs
+  7) Uninstall (keep the data)
+  8) Uninstall and delete all data
   0) Exit
 
 EOF
-  local choice
-  choice="$(ask "  Choose [1]: " 1)"
-  echo
-  case "$choice" in
-    1) ACTION="update"; do_install ;;
-    2) do_port ;;
-    3) do_restart ;;
-    4) do_status ;;
-    5) do_password ;;
-    6) if [ "$(ask "  Remove Neo Uptime (data is kept)? [y/N]: " n)" = "y" ]; then do_uninstall; fi ;;
-    7) if [ "$(ask "  Delete Neo Uptime AND all monitors, history and settings? Type DELETE: " "")" = "DELETE" ]; then PURGE=1; do_uninstall; else say "Nothing was deleted"; fi ;;
-    0|q|Q) ;;
-    *) warn "Unknown choice: $choice" ;;
-  esac
+    choice="$(ask "  Choose [0]: " 0)"
+    echo
+    case "$choice" in
+      1) ACTION="update"; VERSION=""; (do_install) || true ;;
+      2) (do_password) || true ;;
+      3) NEW_PORT=""; (do_port) || true ;;
+      4) (do_restart) || true ;;
+      5) (do_toggle) || true ;;
+      6) do_status ;;
+      7) if [ "$(ask "  Remove Neo Uptime (data is kept)? [y/N]: " n)" = "y" ]; then do_uninstall; return 0; fi ;;
+      8) if [ "$(ask "  Delete Neo Uptime AND all monitors, history and settings? Type DELETE: " "")" = "DELETE" ]; then PURGE=1; do_uninstall; return 0; else say "Nothing was deleted"; fi ;;
+      0|q|Q|"") return 0 ;;
+      *) warn "Unknown choice: $choice" ;;
+    esac
+    pause
+  done
 }
 
 banner
 case "$ACTION" in
   update) do_install ;;
+  password) do_password ;;
   port) do_port ;;
   restart) do_restart ;;
   status) do_status ;;

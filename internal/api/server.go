@@ -165,6 +165,7 @@ func (s *Server) routes() {
 	m.HandleFunc("POST /api/xray/test", s.need(roleEditor, s.handleTestConfig))
 	m.HandleFunc("POST /api/xray/speed", s.need(roleEditor, s.handleSpeedTest))
 	m.HandleFunc("GET /api/xray/speed/{id}", s.need(roleEditor, s.handleSpeedState))
+	m.HandleFunc("GET /api/xray/speed/{id}/stream", s.need(roleEditor, s.handleSpeedStream))
 	m.HandleFunc("POST /api/xray/parse", s.need(roleEditor, s.handleParseConfig))
 
 	// admin, browser session only

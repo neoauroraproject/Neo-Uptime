@@ -50,6 +50,19 @@ func ValidatePassword(pw string) error {
 	return nil
 }
 
+// ValidateUsername allows 3–40 letters, digits, dots, dashes and underscores.
+func ValidateUsername(u string) error {
+	if len(u) < 3 || len(u) > 40 {
+		return fmt.Errorf("username must be 3–40 characters")
+	}
+	for _, c := range u {
+		if !(c >= 'a' && c <= 'z' || c >= 'A' && c <= 'Z' || c >= '0' && c <= '9' || c == '_' || c == '-' || c == '.') {
+			return fmt.Errorf("username may only contain letters, digits, dot, dash and underscore")
+		}
+	}
+	return nil
+}
+
 // RandomToken returns n random bytes, base64url-encoded.
 func RandomToken(n int) string {
 	b := make([]byte, n)

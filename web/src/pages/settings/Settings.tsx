@@ -35,7 +35,7 @@ export default function Settings() {
   const cur = visible.find((s) => s.id === section)
   if (!cur) return <Navigate to={`/settings/${visible[0].id}`} replace />
   return (
-    <div className="p-4 sm:p-6 lg:p-8 max-w-[1200px]">
+    <div className="p-4 sm:p-6 lg:p-8 w-full max-w-[1440px] mx-auto">
       <h1 className="font-display text-[28px] font-semibold tracking-tight">{t('Settings')}</h1>
       <AdCard className="mt-6" />
       <div className="mt-6 grid md:grid-cols-[230px_minmax(0,1fr)] gap-6 items-start">

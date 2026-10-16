@@ -1364,4 +1364,21 @@ export const fa: Record<string, string> = {
   'Press to measure the connection of this server: ping, download and upload.': 'بزنید تا اتصال همین سرور اندازه‌گیری شود: پینگ، دانلود و آپلود.',
   'Test servers': 'سرورهای تست',
   'The nearest Speedtest.net server; Cloudflare if none answers.': 'نزدیک‌ترین سرور Speedtest.net؛ اگر هیچ‌کدام جواب نداد، Cloudflare.',
+
+  // ---------- dashboard groups ----------
+  'Expand all groups': 'باز کردن همهٔ گروه‌ها',
+  'Collapse all groups': 'بستن همهٔ گروه‌ها',
+
+  'Speed test progress': 'پیشرفت تست سرعت',
+
+  // ---------- pulse status theme ----------
+  'Dark panels with a glowing gauge and bold numbers': 'پنل‌های تیره با گیج درخشان و اعداد درشت',
+  'new': 'جدید',
+  'Uptime over the last 30 days': 'آپتایم ۳۰ روز گذشته',
+  'Services online': 'سرویس‌های آنلاین',
+  'Services': 'سرویس‌ها',
+  'Live status': 'وضعیت زنده',
+  'Latest': 'آخرین',
+  'Change from the first half of this window': 'تغییر نسبت به نیمهٔ اول این بازه',
+  'No response data yet': 'هنوز داده‌ای از زمان پاسخ نیست',
 }

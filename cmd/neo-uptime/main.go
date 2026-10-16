@@ -3,6 +3,7 @@
 package main
 
 import (
+	"bufio"
 	"context"
 	"crypto/tls"
 	"errors"
@@ -16,6 +17,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"strconv"
+	"strings"
 	"syscall"
 	"time"
 	_ "time/tzdata" // maintenance windows need zones even on minimal hosts
@@ -51,6 +53,10 @@ func usage() {
 Usage:
   neo-uptime [serve] [flags]          run the server (default)
   neo-uptime reset-password <user> [new-password]
+  neo-uptime reset-admin [--user U] [--username NEW] [--password-stdin] [--keep-2fa]
+                                       forgotten password: a new password (random unless given
+                                       on stdin), 2FA off, signed out everywhere; with no
+                                       account yet it creates the owner
   neo-uptime disable-2fa <user>
   neo-uptime list-users
   neo-uptime set-owner <user>          make an admin the owner (who alone issues status API keys)
@@ -72,6 +78,11 @@ func main() {
 	cmd := "serve"
 	if len(args) > 0 && len(args[0]) > 0 && args[0][0] != '-' {
 		cmd, args = args[0], args[1:]
+	}
+
+	if cmd == "reset-admin" {
+		resetAdmin(args)
+		return
 	}
 
 	fs := flag.NewFlagSet("neo-uptime", flag.ExitOnError)
@@ -248,6 +259,114 @@ func resetPassword(dataDir string, args []string) {
 	}
 	_ = db.DeleteUserSessions(ctx, u.ID, "")
 	fmt.Printf("Password for %s reset. New password: %s\n", u.Username, pw)
+}
+
+// resetAdmin recovers access for whoever runs the server: it gives an admin
+// (the owner unless --user names another) a new password, and by default turns
+// off two-factor sign-in, since a forgotten password often comes with a lost
+// phone. With no account at all it creates the owner.
+func resetAdmin(args []string) {
+	fs := flag.NewFlagSet("reset-admin", flag.ExitOnError)
+	data := fs.String("data", env("NEO_UPTIME_DATA", defaultDataDir()), "data directory")
+	user := fs.String("user", "", "account to reset (default: the owner)")
+	rename := fs.String("username", "", "new username")
+	fromStdin := fs.Bool("password-stdin", false, "read the new password from the first line of stdin")
+	keep2FA := fs.Bool("keep-2fa", false, "leave two-factor sign-in on")
+	_ = fs.Parse(args)
+
+	pw := ""
+	if *fromStdin {
+		line, err := bufio.NewReader(os.Stdin).ReadString('\n')
+		if err != nil && line == "" {
+			log.Fatal("no password on stdin")
+		}
+		pw = strings.TrimRight(line, "\r\n")
+	}
+	generated := pw == ""
+	if generated {
+		pw = auth.RandomAlnum(16)
+	}
+	if err := auth.ValidatePassword(pw); err != nil {
+		log.Fatal(err)
+	}
+	if *rename != "" {
+		if err := auth.ValidateUsername(*rename); err != nil {
+			log.Fatal(err)
+		}
+	}
+	hash, err := auth.HashPassword(pw)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	db := openDB(*data)
+	defer db.Close()
+	ctx := context.Background()
+	list, err := db.ListUsers(ctx)
+	if err != nil {
+		log.Fatal(err)
+	}
+	var u *store.User
+	for _, x := range list {
+		if (*user != "" && strings.EqualFold(x.Username, *user)) || (*user == "" && x.IsOwner) {
+			u = x
+			break
+		}
+	}
+	if u == nil && *user == "" {
+		for _, x := range list {
+			if x.Role == "admin" {
+				u = x
+				break
+			}
+		}
+	}
+	created := false
+	switch {
+	case u == nil && len(list) == 0:
+		name := *rename
+		if name == "" {
+			name = "admin"
+		}
+		u = &store.User{Username: name, PasswordHash: hash, Role: "admin", IsOwner: true}
+		if err := db.CreateUser(ctx, u); err != nil {
+			log.Fatal(err)
+		}
+		created = true
+	case u == nil:
+		log.Fatalf("no user %q — run `neo-uptime list-users`", *user)
+	default:
+		if *rename != "" {
+			if other, err := db.GetUserByName(ctx, *rename); err == nil && other.ID != u.ID {
+				log.Fatalf("the username %q is already taken", *rename)
+			}
+			u.Username = *rename
+		}
+		u.PasswordHash = hash
+		u.Role = "admin"
+		if !*keep2FA {
+			u.TOTPEnabled, u.TOTPSecret = false, ""
+		}
+		if err := db.UpdateUser(ctx, u); err != nil {
+			log.Fatal(err)
+		}
+		_ = db.DeleteUserSessions(ctx, u.ID, "")
+	}
+
+	if created {
+		fmt.Println("Created the owner account.")
+	} else {
+		fmt.Println("Admin account reset; it was signed out everywhere.")
+		if !*keep2FA {
+			fmt.Println("Two-factor sign-in is off; turn it on again under Account & security.")
+		}
+	}
+	fmt.Printf("Username: %s\n", u.Username)
+	if generated {
+		fmt.Printf("Password: %s\n", pw)
+	} else {
+		fmt.Println("Password: the one you entered")
+	}
 }
 
 func disable2FA(dataDir string, args []string) {

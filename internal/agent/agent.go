@@ -255,13 +255,23 @@ func (a *Agent) Run(ctx context.Context) {
 		case <-a.probe.wake:
 			// Test results are ready: send them now rather than at the next
 			// report. A short pause lets results that finish together share one.
+			// A running speed test is watched live, so its readings go out
+			// after 300 ms; anything else waits 1.5 s in all.
 			select {
 			case <-ctx.Done():
 				return
-			case <-time.After(1500 * time.Millisecond):
+			case <-time.After(300 * time.Millisecond):
 			}
-			if time.Until(next) < 3*time.Second {
-				continue // the regular report is about to carry them
+			live := a.probe.hasProgress()
+			if !live {
+				select {
+				case <-ctx.Done():
+					return
+				case <-time.After(1200 * time.Millisecond):
+				}
+				if time.Until(next) < 3*time.Second {
+					continue // the regular report is about to carry them
+				}
 			}
 			r := &agentproto.Report{Format: agentproto.Version, AgentVersion: version.Version, Time: time.Now().UnixMilli(),
 				Interval: int(interval / time.Second), Early: true}

@@ -265,17 +265,7 @@ type credentials struct {
 	Remember bool   `json:"remember"`
 }
 
-func validUsername(u string) error {
-	if len(u) < 3 || len(u) > 40 {
-		return errors.New("username must be 3–40 characters")
-	}
-	for _, c := range u {
-		if !(c >= 'a' && c <= 'z' || c >= 'A' && c <= 'Z' || c >= '0' && c <= '9' || c == '_' || c == '-' || c == '.') {
-			return errors.New("username may only contain letters, digits, dot, dash and underscore")
-		}
-	}
-	return nil
-}
+func validUsername(u string) error { return auth.ValidateUsername(u) }
 
 func (s *Server) handleSetup(w http.ResponseWriter, r *http.Request) {
 	var in credentials

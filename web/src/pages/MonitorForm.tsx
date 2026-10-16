@@ -1186,7 +1186,7 @@ export default function MonitorForm({ mode }: { mode: 'add' | 'edit' | 'clone' }
   const back = mode === 'add' ? '/dashboard' : `/dashboard/${id}`
 
   return (
-    <form onSubmit={submit} noValidate className="flex flex-col h-[calc(100dvh-3.5rem)] lg:h-dvh p-4 sm:p-6 lg:p-8 gap-4 max-w-[980px]">
+    <form onSubmit={submit} noValidate className="flex flex-col h-[calc(100dvh-3.5rem)] lg:h-dvh p-4 sm:p-6 lg:p-8 gap-4 w-full max-w-[980px] mx-auto">
       <div className="flex flex-wrap items-center justify-between gap-3 shrink-0">
         <div className="min-w-0">
           <Link to={back} className="inline-flex items-center gap-1.5 text-sm text-muted hover:text-fg"><ArrowLeft className="size-4 rtl:rotate-180" />{t('Back')}</Link>

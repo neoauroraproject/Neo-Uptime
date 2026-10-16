@@ -294,7 +294,7 @@ export interface ProviderField {
 
 export interface Provider { type: string; name: string; group: string; fields: ProviderField[] }
 
-export type Theme = 'zen' | 'aurora' | 'clarity' | 'lime' | 'noir'
+export type Theme = 'zen' | 'pulse' | 'aurora' | 'clarity' | 'lime' | 'noir'
 
 /** Details a status page can leave out; hidden data is not sent at all. */
 export type HideKey = 'flag' | 'status' | 'location' | 'graph' | 'bars' | 'direction' | 'transport' | 'profile' | 'port' | 'traffic' | 'connected'

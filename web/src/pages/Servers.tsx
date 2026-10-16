@@ -461,7 +461,7 @@ export default function Servers() {
   }
   const online = agents.filter((a) => a.online).length
   return (
-    <div className="p-4 sm:p-6 lg:p-8 space-y-6 max-w-[1600px]">
+    <div className="p-4 sm:p-6 lg:p-8 space-y-6 w-full max-w-[1440px] mx-auto">
       <div className="flex flex-wrap items-end justify-between gap-4">
         <div>
           <h1 className="font-display text-[28px] font-semibold tracking-tight">{t('Servers')}</h1>

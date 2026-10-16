@@ -236,6 +236,18 @@ func (p *prober) progress(id string, pr agentproto.SpeedProgress) {
 	p.poke()
 }
 
+// hasProgress says whether a progress note is waiting to be sent.
+func (p *prober) hasProgress() bool {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	for _, j := range p.jobs {
+		if j.Partial {
+			return true
+		}
+	}
+	return false
+}
+
 // dropProgress forgets the unsent progress notes of a job. p.mu is held.
 func (p *prober) dropProgress(id string) {
 	kept := p.jobs[:0]

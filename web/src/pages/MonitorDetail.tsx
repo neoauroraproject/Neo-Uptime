@@ -150,7 +150,7 @@ export default function MonitorDetail() {
   const pages = Math.ceil(evTotal / per)
 
   return (
-    <div className="@container p-4 sm:p-6 lg:p-8 space-y-5 max-w-[1300px] fade-up" key={id}>
+    <div className="@container p-4 sm:p-6 lg:p-8 space-y-5 w-full max-w-[1440px] mx-auto fade-up" key={id}>
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div className="min-w-0">
           <div className="flex items-center gap-2 text-[13px] text-muted">
