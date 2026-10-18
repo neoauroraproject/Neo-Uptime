@@ -5,7 +5,8 @@ import { api } from '../lib/api'
 import { canEdit, useApp } from '../lib/store'
 import { bytes, clsx, ms, n, timeAgo } from '../lib/format'
 import { useT } from '../lib/i18n'
-import type { BackpackPanel, PanelSnapshot } from '../lib/types'
+import type { BackpackPanel, PanelSnapshot, TunnelSource } from '../lib/types'
+import { sourceLabel, tunnelSources } from '../components/meta'
 import { Alert, Badge, Button, Card, Checkbox, Empty, Field, IconButton, Input, Menu, Modal, Segmented, Select, Skeleton, Switch, confirm, toast, useNow } from '../components/ui'
 import { TunnelBadges, TunnelCard } from '../components/tunnel'
 import { TunnelSlowAlertsDialog } from '../components/SlowAlert'
@@ -74,7 +75,7 @@ function PanelDialog({ open, onClose, panel }: { open: boolean; onClose: () => v
           {t('In the BackPack web panel open Settings → Security → API tokens, create a token with scope “read” (name it neo-uptime) and paste it below. Use the address you open the panel with — including the port and any secret path.')}
         </Alert>
         <Alert tone="success" title={t('No panel, or BackPack runs on another server?')}>
-          {t('Install the agent on that server instead (Servers → Add server): it reads BackPack and Kariz directly, with no panel token.')}
+          {t('Install the agent on that server instead (Servers → Add server): it reads BackPack, Kariz and NeoTunnel directly, with no panel token.')}
         </Alert>
         {err && <Alert tone="danger">{err}</Alert>}
         <div className="grid sm:grid-cols-2 gap-4">
@@ -209,7 +210,7 @@ function Panels() {
   return (
     <div className="space-y-4">
       <Alert tone="info">
-        {t('Panels are read over BackPack’s API. To watch BackPack or Kariz on another server without a panel token, add the server under')} <Link to="/servers" className="text-accent-ink underline">{t('Servers')}</Link>.
+        {t('Panels are read over BackPack’s API. To watch BackPack, Kariz or NeoTunnel on another server without a panel token, add the server under')} <Link to="/servers" className="text-accent-ink underline">{t('Servers')}</Link>.
       </Alert>
       {panels.length === 0 ? (
         <Card>
@@ -276,7 +277,7 @@ export default function Tunnels({ tab = 'tunnels' }: { tab?: 'tunnels' | 'panels
   const loaded = useApp((s) => s.loaded)
   const [q, setQ] = useState('')
   const [via, setVia] = useState('')
-  const [source, setSource] = useState<'all' | 'backpack' | 'kariz'>('all')
+  const [source, setSource] = useState<'all' | TunnelSource>('all')
   const [state, setState] = useState<'all' | 'online' | 'offline'>('all')
   const [sort, setSort] = useState<'status' | 'name' | 'latency' | 'traffic'>('status')
   const [slowOpen, setSlowOpen] = useState(false)
@@ -310,14 +311,14 @@ export default function Tunnels({ tab = 'tunnels' }: { tab?: 'tunnels' | 'panels
   const traffic = tunnels.reduce((a, m) => a + (m.tunnel?.totalBytes ?? 0), 0)
   const pings = tunnels.map((m) => (m.last?.status === 1 ? m.last.ping : null)).filter((v): v is number => v != null)
   const avg = pings.length ? pings.reduce((a, b) => a + b, 0) / pings.length : -1
-  const hasKariz = tunnels.some((m) => sourceOf(m) === 'kariz')
+  const present = tunnelSources.filter((src) => tunnels.some((m) => sourceOf(m) === src))
 
   return (
     <div className="p-4 sm:p-6 lg:p-8 space-y-6 w-full max-w-[1440px] mx-auto">
       <div className="flex flex-wrap items-end justify-between gap-4">
         <div>
           <h1 className="font-display text-[28px] font-semibold tracking-tight">{t('Tunnels')}</h1>
-          <p className="text-sm text-muted mt-1">{t('BackPack and Kariz tunnels from your panels and servers, checked continuously.')}</p>
+          <p className="text-sm text-muted mt-1">{t('BackPack, Kariz and NeoTunnel tunnels from your panels and servers, checked continuously.')}</p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
           {tab === 'tunnels' && canEdit(role) && tunnels.length > 0 && (
@@ -358,8 +359,8 @@ export default function Tunnels({ tab = 'tunnels' }: { tab?: 'tunnels' | 'panels
                 {vias.map((v) => <option key={v} value={v}>{viaName(v)}</option>)}
               </Select>
             )}
-            {hasKariz && (
-              <Segmented ariaLabel={t('Program')} value={source} onChange={setSource} options={[{ value: 'all', label: t('All') }, { value: 'backpack', label: 'BackPack' }, { value: 'kariz', label: 'Kariz' }]} />
+            {present.length > 1 && (
+              <Segmented ariaLabel={t('Program')} value={source} onChange={setSource} options={[{ value: 'all' as const, label: t('All') }, ...present.map((src) => ({ value: src, label: sourceLabel(src) }))]} />
             )}
             <Segmented ariaLabel={t('State')} value={state} onChange={setState} options={[{ value: 'all', label: t('All') }, { value: 'online', label: t('Online') }, { value: 'offline', label: t('Offline') }]} />
             <Select aria-label={t('Sort')} value={sort} onChange={(e) => setSort(e.target.value as typeof sort)} className="w-40 ms-auto">
@@ -375,7 +376,7 @@ export default function Tunnels({ tab = 'tunnels' }: { tab?: 'tunnels' | 'panels
             <div className="grid md:grid-cols-2 2xl:grid-cols-3 gap-4">{Array.from({ length: 6 }).map((_, i) => <Skeleton key={i} className="h-80 rounded-[18px]" />)}</div>
           ) : tunnels.length === 0 ? (
             <Card>
-              <Empty icon={<Cable className="size-6" />} title={t('No tunnels yet')} body={t('Install the agent on a server that runs BackPack or Kariz, or connect a BackPack panel — tunnels are imported as monitors automatically.')}
+              <Empty icon={<Cable className="size-6" />} title={t('No tunnels yet')} body={t('Install the agent on a server that runs BackPack, Kariz or NeoTunnel, or connect a BackPack panel — tunnels are imported as monitors automatically.')}
                 action={<div className="flex flex-wrap justify-center gap-2"><Button variant="primary" icon={<Server className="size-4" />} onClick={() => nav('/servers')}>{t('Add a server')}</Button><Button icon={<Plus className="size-4" />} onClick={() => nav('/tunnels/panels')}>{t('Connect panel')}</Button></div>} />
             </Card>
           ) : list.length === 0 ? (

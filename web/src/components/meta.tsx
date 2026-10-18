@@ -19,7 +19,7 @@ export const typeInfo: Record<MonitorType, { label: string; icon: ReactNode; gro
   tls: { label: 'SSL certificate', icon: <LockKeyhole />, group: 'General', help: 'Goes down when a certificate is invalid or about to expire.' },
   agent: { label: 'Server (agent)', icon: <Cpu />, group: 'Servers & tunnels', help: 'A server running neo-uptime-agent: online state, CPU, memory, disk and traffic.' },
   xray: { label: 'V2Ray config', icon: <Rocket />, group: 'Servers & tunnels', help: 'VLESS, VMess, Trojan, Shadowsocks or Hysteria2 — connected for real through an Xray core, from this panel or one of your servers.' },
-  'agent-tunnel': { label: 'Tunnel via agent', icon: <Cable />, group: 'Servers & tunnels', help: 'A BackPack or Kariz tunnel read by the agent on its server — no panel or token needed there.' },
+  'agent-tunnel': { label: 'Tunnel via agent', icon: <Cable />, group: 'Servers & tunnels', help: 'A BackPack, Kariz or NeoTunnel tunnel read by the agent on its server — no panel or token needed there.' },
   'backpack-tunnel': { label: 'BackPack tunnel (panel API)', icon: <Cable />, group: 'Servers & tunnels', help: 'Watches one tunnel through its BackPack panel: state, latency and traffic.' },
   'backpack-panel': { label: 'BackPack panel', icon: <Server />, group: 'Servers & tunnels', help: 'Checks the panel answers and reports its host CPU and memory.' },
   push: { label: 'Push (heartbeat)', icon: <Webhook />, group: 'Passive', help: 'Your script calls a URL; silence marks it down. Uptime Kuma push compatible.' },
@@ -51,12 +51,21 @@ export function TypeLabel({ type }: { type: MonitorType }) {
   return <>{t(typeInfo[type]?.label ?? type)}</>
 }
 
+/** The tunnel programs an agent reads, in the order they are shown. */
+export const tunnelSources = ['backpack', 'kariz', 'neotunnel'] as const
+
+export function sourceLabel(source?: string) {
+  return source === 'kariz' ? 'Kariz' : source === 'neotunnel' ? 'NeoTunnel' : 'BackPack'
+}
+
 export function SourceBadge({ source }: { source?: string }) {
   if (!source) return null
   return (
     <span className={clsx('inline-flex items-center h-5 px-1.5 rounded-md text-[10.5px] font-bold uppercase tracking-wider border',
-      source === 'kariz' ? 'text-maint border-maint/30 bg-maint/10' : 'text-accent-ink border-accent/30 bg-accent-soft')}>
-      {source === 'kariz' ? 'Kariz' : 'BackPack'}
+      source === 'kariz' ? 'text-maint border-maint/30 bg-maint/10'
+        : source === 'neotunnel' ? 'text-pending border-pending/30 bg-pending/10'
+          : 'text-accent-ink border-accent/30 bg-accent-soft')}>
+      {sourceLabel(source)}
     </span>
   )
 }

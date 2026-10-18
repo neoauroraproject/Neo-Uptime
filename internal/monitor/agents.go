@@ -74,7 +74,26 @@ type AgentInfo struct {
 	IP         string            `json:"ip"`
 	Backpack   *SourceSummary    `json:"backpack,omitempty"`
 	Kariz      *SourceSummary    `json:"kariz,omitempty"`
+	NeoTunnel  *SourceSummary    `json:"neotunnel,omitempty"`
 }
+
+// TunnelSources are the tunnel programs an agent reads, in the order they
+// are shown.
+var TunnelSources = []string{"backpack", "kariz", "neotunnel"}
+
+// SourceLabel is a tunnel program's name as people write it.
+func SourceLabel(source string) string {
+	switch source {
+	case "kariz":
+		return "Kariz"
+	case "neotunnel":
+		return "NeoTunnel"
+	}
+	return "BackPack"
+}
+
+// KnownSource reports whether an agent can read the named tunnel program.
+func KnownSource(source string) bool { return slices.Contains(TunnelSources, source) }
 
 func summarize(s *agentproto.Source) *SourceSummary {
 	if s == nil {
@@ -96,7 +115,7 @@ func (st *AgentState) Info() *AgentInfo {
 	}
 	return &AgentInfo{
 		System: st.Report.System, ReceivedAt: st.ReceivedAt.UnixMilli(), Version: st.Report.AgentVersion, IP: st.IP,
-		Backpack: summarize(st.Report.Backpack), Kariz: summarize(st.Report.Kariz),
+		Backpack: summarize(st.Report.Backpack), Kariz: summarize(st.Report.Kariz), NeoTunnel: summarize(st.Report.NeoTunnel),
 	}
 }
 
@@ -105,8 +124,11 @@ func (st *AgentState) Source(name string) *agentproto.Source {
 	if st == nil || st.Report == nil {
 		return nil
 	}
-	if name == "kariz" {
+	switch name {
+	case "kariz":
 		return st.Report.Kariz
+	case "neotunnel":
+		return st.Report.NeoTunnel
 	}
 	return st.Report.Backpack
 }
@@ -169,12 +191,9 @@ func checkAgent(ctx context.Context, m *store.Monitor, env *Env) Result {
 	if s.DiskTotal > 0 {
 		parts = append(parts, fmt.Sprintf("disk %.0f%%", 100*float64(s.DiskUsed)/float64(s.DiskTotal)))
 	}
-	for _, src := range []struct {
-		name string
-		s    *agentproto.Source
-	}{{"BackPack", st.Report.Backpack}, {"Kariz", st.Report.Kariz}} {
-		if sum := summarize(src.s); sum != nil && sum.Tunnels > 0 {
-			parts = append(parts, fmt.Sprintf("%s %d/%d", src.name, sum.Online, sum.Tunnels))
+	for _, name := range TunnelSources {
+		if sum := summarize(st.Source(name)); sum != nil && sum.Tunnels > 0 {
+			parts = append(parts, fmt.Sprintf("%s %d/%d", SourceLabel(name), sum.Online, sum.Tunnels))
 		}
 	}
 	r.Msg = strings.Join(parts, " · ")
@@ -193,10 +212,7 @@ func checkAgentTunnel(ctx context.Context, m *store.Monitor, env *Env) Result {
 	if age, stale := agentStale(a, st); stale {
 		return down(agentGone(a, st, age))
 	}
-	label := "BackPack"
-	if m.Config.Source == "kariz" {
-		label = "Kariz"
-	}
+	label := SourceLabel(m.Config.Source)
 	src := st.Source(m.Config.Source)
 	if src == nil {
 		return down(label + " is not installed on " + a.Name)
@@ -240,6 +256,9 @@ func tunnelResult(t *backpack.Tunnel, serviceDownIsDown bool) Result {
 		}
 	case t.State == "stopped":
 		r.Msg = "tunnel service is stopped"
+		if t.LastError != "" {
+			r.Msg = "tunnel stopped · " + t.LastError
+		}
 	default:
 		r.Msg = fmt.Sprintf("%s %s — peer not connected", label, firstNonEmpty(t.State, "offline"))
 		if t.LastError != "" {
@@ -345,7 +364,7 @@ func (mg *Manager) ImportAgentTunnels(ctx context.Context, agentID int64, keys [
 		t      backpack.Tunnel
 	}
 	var todo []item
-	for _, src := range []string{"backpack", "kariz"} {
+	for _, src := range TunnelSources {
 		s := st.Source(src)
 		if s == nil {
 			continue
@@ -386,10 +405,7 @@ func (mg *Manager) ImportAgentTunnels(ctx context.Context, agentID int64, keys [
 	}
 	n := 0
 	for _, it := range todo {
-		label := "BackPack"
-		if it.source == "kariz" {
-			label = "Kariz"
-		}
+		label := SourceLabel(it.source)
 		country := it.t.PeerCountry
 		if country == "" {
 			country = a.Country

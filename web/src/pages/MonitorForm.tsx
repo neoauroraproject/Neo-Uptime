@@ -5,9 +5,9 @@ import { api } from '../lib/api'
 import { canEdit, useApp } from '../lib/store'
 import { bytes, clsx, duration, n } from '../lib/format'
 import { useT } from '../lib/i18n'
-import type { AgentAddresses, AgentSource, Monitor, MonitorConfig, MonitorTag, MonitorType, PanelSnapshot, SubPreview, Subscription, Tunnel } from '../lib/types'
+import type { AgentAddresses, AgentSource, Monitor, MonitorConfig, MonitorTag, MonitorType, PanelSnapshot, SubPreview, Subscription, Tunnel, TunnelSource } from '../lib/types'
 import { Alert, Button, Checkbox, Empty, Field, Input, Segmented, Select, Skeleton, Spinner, Switch, TagChip, Textarea, toast } from '../components/ui'
-import { SourceBadge, TypeIcon, typeGroups, typeInfo } from '../components/meta'
+import { SourceBadge, TypeIcon, sourceLabel, tunnelSources, typeGroups, typeInfo } from '../components/meta'
 import { InstallBox } from './Servers'
 import { CountryPicker, Flag } from '../components/flag'
 import { NotificationDialog } from '../components/NotificationDialog'
@@ -21,7 +21,7 @@ const codePresets = ['200-299', '300-399', '400-499', '500-599']
 
 // The few types most people need, shown first as big cards.
 const popular: { type: MonitorType; label: string; help: string }[] = [
-  { type: 'agent-tunnel', label: 'Tunnel', help: 'A BackPack or Kariz tunnel on one of your servers' },
+  { type: 'agent-tunnel', label: 'Tunnel', help: 'A BackPack, Kariz or NeoTunnel tunnel on one of your servers' },
   { type: 'xray', label: 'V2Ray configs', help: 'A subscription link or single configs, connected for real through Xray' },
   { type: 'agent', label: 'Server', help: 'CPU, memory and tunnels of a server running the agent' },
   { type: 'http', label: 'Website', help: 'Is a website or API answering?' },
@@ -31,11 +31,8 @@ const popular: { type: MonitorType; label: string; help: string }[] = [
 
 const steps = ['Type', 'Details', 'Alerts', 'Finish'] as const
 
-type Found = { backpack?: AgentSource; kariz?: AgentSource }
-const tunnelKeys = (f: Found) => [
-  ...(f.backpack?.tunnels ?? []).map((tn) => `backpack/${tn.name}`),
-  ...(f.kariz?.tunnels ?? []).map((tn) => `kariz/${tn.name}`),
-]
+type Found = Partial<Record<TunnelSource, AgentSource>>
+const tunnelKeys = (f: Found) => tunnelSources.flatMap((src) => (f[src]?.tunnels ?? []).map((tn) => `${src}/${tn.name}`))
 
 // Configs are best tested from inside the country their users are in: an
 // Iran server when there is one reporting, otherwise this panel.
@@ -107,7 +104,7 @@ export default function MonitorForm({ mode }: { mode: 'add' | 'edit' | 'clone' }
   const [busy, setBusy] = useState(false)
   const [snap, setSnap] = useState<PanelSnapshot | null>(null)
   const [snapLoading, setSnapLoading] = useState(false)
-  const [agentData, setAgentData] = useState<{ backpack?: AgentSource; kariz?: AgentSource } | null>(null)
+  const [agentData, setAgentData] = useState<Found | null>(null)
   const [newTag, setNewTag] = useState({ tagId: 0, name: '', color: '#a3e635', value: '' })
   const [customCode, setCustomCode] = useState('')
   const [notifOpen, setNotifOpen] = useState(false)
@@ -137,10 +134,10 @@ export default function MonitorForm({ mode }: { mode: 'add' | 'edit' | 'clone' }
   const createdId = created?.id
   useEffect(() => {
     if (!createdId || found) return
-    const check = () => api.get<{ agent: { lastSeen: number }; backpack?: AgentSource | null; kariz?: AgentSource | null }>(`/api/agents/${createdId}`)
+    const check = () => api.get<{ agent: { lastSeen: number } } & Partial<Record<TunnelSource, AgentSource | null>>>(`/api/agents/${createdId}`)
       .then((r) => {
         if (!r.agent.lastSeen) return
-        const f = { backpack: r.backpack ?? undefined, kariz: r.kariz ?? undefined }
+        const f: Found = { backpack: r.backpack ?? undefined, kariz: r.kariz ?? undefined, neotunnel: r.neotunnel ?? undefined }
         setFound(f)
         setPick(new Set(tunnelKeys(f)))
       })
@@ -180,7 +177,7 @@ export default function MonitorForm({ mode }: { mode: 'add' | 'edit' | 'clone' }
   const agentId = d?.config.agentId
   useEffect(() => {
     if (!agentId || d?.type !== 'agent-tunnel') return
-    api.get<{ backpack?: AgentSource; kariz?: AgentSource }>(`/api/agents/${agentId}`).then(setAgentData).catch(() => setAgentData(null))
+    api.get<Found>(`/api/agents/${agentId}`).then(setAgentData).catch(() => setAgentData(null))
   }, [agentId, d?.type])
 
   const xlink = d?.type === 'xray' ? d.config.link ?? '' : ''
@@ -236,7 +233,7 @@ export default function MonitorForm({ mode }: { mode: 'add' | 'edit' | 'clone' }
   const c = d.config
   const isHttp = httpTypes.includes(d.type)
   const autoTimeout = Math.min(48, Math.max(5, Math.round(d.interval * 0.8)))
-  const agentTunnels: Tunnel[] = (c.source === 'kariz' ? agentData?.kariz?.tunnels : agentData?.backpack?.tunnels) ?? []
+  const agentTunnels: Tunnel[] = agentData?.[c.source ?? 'backpack']?.tunnels ?? []
   const last = steps.length - 1
   const hasLatency = d.type !== 'group' && d.type !== 'push'
   const serverFlow = mode === 'add' && (((d.type === 'agent' || d.type === 'agent-tunnel') && (newServer || agents.length === 0)) || (d.type === 'xray' && newServer))
@@ -733,9 +730,8 @@ export default function MonitorForm({ mode }: { mode: 'add' | 'edit' | 'clone' }
             {d.type === 'agent-tunnel' && (
               <>
                 <Field label={t('Program')} htmlFor="src">
-                  <Select id="src" value={c.source ?? 'backpack'} onChange={(e) => setD({ ...d, config: { ...c, source: e.target.value as 'backpack' | 'kariz', tunnelName: '' } })}>
-                    <option value="backpack">BackPack</option>
-                    <option value="kariz">Kariz</option>
+                  <Select id="src" value={c.source ?? 'backpack'} onChange={(e) => setD({ ...d, config: { ...c, source: e.target.value as TunnelSource, tunnelName: '' } })}>
+                    {tunnelSources.map((s) => <option key={s} value={s}>{sourceLabel(s)}</option>)}
                   </Select>
                 </Field>
                 <Field label={t('Tunnel')} required htmlFor="atn">
@@ -1125,7 +1121,7 @@ export default function MonitorForm({ mode }: { mode: 'add' | 'edit' | 'clone' }
     </div>
   )
 
-  const counts = { bp: found?.backpack?.tunnels.length ?? 0, kz: found?.kariz?.tunnels.length ?? 0 }
+  const counts = { bp: found?.backpack?.tunnels.length ?? 0, kz: found?.kariz?.tunnels.length ?? 0, nt: found?.neotunnel?.tunnels.length ?? 0 }
   const serverStep = (
     <div className="space-y-5">
       <div>
@@ -1158,10 +1154,10 @@ export default function MonitorForm({ mode }: { mode: 'add' | 'edit' | 'clone' }
                 {xsub && subList}
               </div>
             ) : <div className="space-y-3">
-              <p className="flex items-center gap-2 font-medium text-up"><CircleCheck className="size-5" />{t('Connected — {bp} BackPack and {kz} Kariz tunnels found.', counts)}</p>
+              <p className="flex items-center gap-2 font-medium text-up"><CircleCheck className="size-5" />{t('Connected — {bp} BackPack, {kz} Kariz and {nt} NeoTunnel tunnels found.', counts)}</p>
               {tunnelKeys(found).length > 0 && (
                 <div className="rounded-2xl border border-line divide-y divide-line max-h-60 overflow-y-auto">
-                  {(['backpack', 'kariz'] as const).flatMap((src) => (found[src]?.tunnels ?? []).map((tn) => {
+                  {tunnelSources.flatMap((src) => (found[src]?.tunnels ?? []).map((tn) => {
                     const k = `${src}/${tn.name}`
                     return (
                       <div key={k} className="px-4 py-2.5">

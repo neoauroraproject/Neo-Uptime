@@ -49,6 +49,7 @@ Ports 80 and 443 are only needed for automatic HTTPS.
 - **The server:** CPU, load, memory, swap, disk, network rate and TCP connections.
 - **BackPack:** each tunnel in `/etc/backpack/*.toml`, its live `*.metrics.json` and its systemd unit. No panel token is needed.
 - **Kariz:** each tunnel in `/etc/kariz/*.toml`, its control socket and its `kariz@<name>` unit.
+- **NeoTunnel:** each tunnel in `/etc/neotunnel/state.json`, on the main server and on destination servers. Its daemon pings every tunnel's far inner address (`health.json`), so a tunnel is online only when packets really pass, and the ping is the round trip through the tunnel. Traffic comes from `traffic.json`, the monthly quota counts this month, and a tunnel that is turned off or over its quota shows as stopped. The layers under a stack (the SIT under a 6to4) are not tunnels of their own. Nothing else is needed: no panel password, any NeoTunnel release.
 - **Latency:** an ICMP ping to each tunnel's peer.
 - **V2Ray configs** it was asked to test (see below), and subscriptions it was asked to fetch.
 
@@ -66,7 +67,7 @@ How reports reach Neo Uptime (chosen above the install command):
 
 - **Server IP** (default): `http://IP:7788` of the Neo Uptime server, with the domain as a fallback.
 - **Domain**: the public address — fine when it is not behind a CDN.
-- **Through a tunnel**: forward a port of that server's BackPack or Kariz tunnel to Neo Uptime's port; the agent reports to `http://127.0.0.1:PORT` and falls back to the IP. With BackPack in reverse mode and Neo Uptime on the foreign end, add `7788` to the tunnel's ports on the Iran side.
+- **Through a tunnel**: forward a port of that server's BackPack, Kariz or NeoTunnel tunnel to Neo Uptime's port; the agent reports to `http://127.0.0.1:PORT` and falls back to the IP. With BackPack in reverse mode and Neo Uptime on the foreign end, add `7788` to the tunnel's ports on the Iran side.
 
 **Updates from the panel.** *Update agent* on a server's card (or *Update agents* for all) moves an agent to the panel's own release. The panel downloads that release's agent from GitHub once (`NEO_UPTIME_RELEASES_URL` points it at a mirror), checks it against the release's `checksums.txt` and hands it out at `/api/agent/binary` to agents with a valid token — so servers that cannot reach GitHub update too; GitHub is the agent's fallback. The agent checks the SHA-256, runs the new binary once (`version`), swaps it in and exits for systemd to start it. Agents before v1.3.1 cannot do this and need the install command once.
 

@@ -7,7 +7,7 @@ import { useApp } from '../lib/store'
 import { HeartbeatBar, Meter, Sparkline } from './charts'
 import { Badge, StatusPill } from './ui'
 import { Flag, countryName } from './flag'
-import { SourceBadge } from './meta'
+import { SourceBadge, tunnelSources } from './meta'
 
 export function TunnelBadges({ t, className }: { t: { direction?: string; carrier?: string; transport?: string; preset?: string; tunnelPort?: string }; className?: string }) {
   return (
@@ -121,7 +121,7 @@ export function TunnelDetails({ t: tn }: { t: Tunnel }) {
         <Stat label={t('Connected for')} value={tn.uptime || '—'} />
         {tn.kcpLossPercent != null && tn.kcpLossPercent > 0 && <Stat label={t('KCP loss')} value={pct(tn.kcpLossPercent / 100)} hint={t('Share of sent traffic that needed resending')} />}
         {tn.pool && <Stat label={t('Sessions')} value={<span dir="ltr">{n(tn.pool.live)}/{n(tn.pool.target)}</span>} />}
-        {tn.quotaLimit ? <Stat label={t('Quota')} value={`${bytes(tn.totalBytes)} / ${bytes(tn.quotaLimit)}`} /> : null}
+        {tn.quotaLimit ? <Stat label={t('Quota')} value={`${bytes(tn.quotaUsed ?? tn.totalBytes)} / ${bytes(tn.quotaLimit)}`} /> : null}
         {tn.ports && <Stat label={t('Forwarded ports')} value={<span className="font-mono text-base" dir="ltr">{tn.ports}</span>} />}
       </div>
       {rates.length > 1 && (
@@ -168,7 +168,7 @@ export function AgentPanel({ a }: { a: AgentInfo }) {
   const s = a.system
   const memPct = s.memTotal ? (100 * s.memUsed) / s.memTotal : 0
   const diskPct = s.diskTotal ? (100 * s.diskUsed) / s.diskTotal : 0
-  const sources = ([['backpack', a.backpack], ['kariz', a.kariz]] as const).filter(([, x]) => x)
+  const sources = tunnelSources.map((name) => [name, a[name]] as const).filter(([, x]) => x)
   return (
     <div className="space-y-5">
       <div className="flex flex-wrap items-center gap-x-5 gap-y-1 text-[13px] text-muted">

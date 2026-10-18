@@ -21,8 +21,9 @@ type Report struct {
 
 	System System `json:"system"`
 
-	Backpack *Source `json:"backpack,omitempty"`
-	Kariz    *Source `json:"kariz,omitempty"`
+	Backpack  *Source `json:"backpack,omitempty"`
+	Kariz     *Source `json:"kariz,omitempty"`
+	NeoTunnel *Source `json:"neotunnel,omitempty"`
 
 	// Caps lists what this agent can do beyond reporting, e.g. "xray".
 	Caps []string `json:"caps,omitempty"`

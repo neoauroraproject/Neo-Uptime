@@ -168,7 +168,8 @@ func TestAgentReportAndStatusAPI(t *testing.T) {
 
 	report := `{"format":1,"agentVersion":"test","interval":10,"system":{"hostname":"edge","cpuPercent":12,"memTotal":1000,"memUsed":400},
 "backpack":{"installed":true,"mode":"files","tunnels":[{"name":"de2","source":"backpack","state":"online","ping":90,"carrier":"wssmux","direction":"reverse","peerCountry":"DE"}]},
-"kariz":{"installed":true,"mode":"socket","tunnels":[{"name":"main","source":"kariz","state":"offline","ping":-1,"carrier":"tcpmux","direction":"reverse","lastError":"refused"}]}}`
+"kariz":{"installed":true,"mode":"socket","tunnels":[{"name":"main","source":"kariz","state":"offline","ping":-1,"carrier":"tcpmux","direction":"reverse","lastError":"refused"}]},
+"neotunnel":{"installed":true,"mode":"files","tunnels":[{"name":"de","source":"neotunnel","state":"online","ping":41,"carrier":"6to4","direction":"direct","node":"de"}]}}`
 	post := func(tok string) int {
 		req, _ := http.NewRequest("POST", h.srv.URL+"/api/agent/report", strings.NewReader(report))
 		req.Header.Set("Authorization", "Bearer "+tok)
@@ -186,30 +187,36 @@ func TestAgentReportAndStatusAPI(t *testing.T) {
 		t.Fatalf("report: %d", c)
 	}
 
-	// Auto-import runs in the background; wait for the three monitors.
+	// Auto-import runs in the background; wait for the monitors.
 	var mons []any
 	for i := 0; i < 50; i++ {
 		_, out = h.do("GET", "/api/dashboard", "", false)
 		mons, _ = out["monitors"].([]any)
-		if len(mons) >= 4 { // group + server + 2 tunnels
+		if len(mons) >= 5 { // group + server + 3 tunnels
 			break
 		}
 		time.Sleep(100 * time.Millisecond)
 	}
 	types := map[string]int{}
-	var de2 map[string]any
+	var de2, nt map[string]any
 	for _, m := range mons {
 		mm := m.(map[string]any)
 		types[mm["type"].(string)]++
 		if mm["name"] == "de2" {
 			de2 = mm
 		}
+		if mm["name"] == "de" {
+			nt = mm
+		}
 	}
-	if types["group"] != 1 || types["agent"] != 1 || types["agent-tunnel"] != 2 {
+	if types["group"] != 1 || types["agent"] != 1 || types["agent-tunnel"] != 3 {
 		t.Fatalf("imported monitors: %v", types)
 	}
 	if de2 == nil || de2["country"] != "de" {
 		t.Fatalf("tunnel country should come from the peer: %v", de2)
+	}
+	if nt == nil || !strings.HasPrefix(fmt.Sprint(nt["description"]), "NeoTunnel") {
+		t.Fatalf("the NeoTunnel tunnel should be imported as one: %v", nt)
 	}
 
 	// Private status API.
@@ -259,7 +266,7 @@ func TestAgentReportAndStatusAPI(t *testing.T) {
 		t.Fatalf("status API: %d %v", c, body)
 	}
 	groups := body["groups"].([]any)
-	if len(groups) != 1 || len(groups[0].(map[string]any)["monitors"].([]any)) != 2 {
+	if len(groups) != 1 || len(groups[0].(map[string]any)["monitors"].([]any)) != 3 {
 		t.Fatalf("status API groups: %v", groups)
 	}
 }

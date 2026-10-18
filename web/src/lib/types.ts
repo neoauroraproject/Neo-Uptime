@@ -37,7 +37,7 @@ export interface MonitorConfig {
   tunnelName?: string
   serviceDownIsDown?: boolean
   agentId?: number
-  source?: 'backpack' | 'kariz'
+  source?: TunnelSource
   username?: string
   password?: string
   topic?: string
@@ -109,8 +109,11 @@ export interface CertInfo {
 
 export interface RatePoint { t: number; in: number; out: number }
 
+/** The tunnel programs an agent reads. */
+export type TunnelSource = 'backpack' | 'kariz' | 'neotunnel'
+
 export interface Tunnel {
-  source?: 'backpack' | 'kariz'
+  source?: TunnelSource
   lastError?: string
   name: string
   role: string
@@ -132,6 +135,8 @@ export interface Tunnel {
   outBytes?: number
   totalBytes?: number
   quotaLimit?: number
+  /** What counts against the quota, when that is not the total (NeoTunnel: this month). */
+  quotaUsed?: number
   quotaHit?: boolean
   kcpLossPercent?: number
   pool?: { live: number; target: number; configured: number; mbps: number }
@@ -474,6 +479,7 @@ export interface AgentInfo {
   ip: string
   backpack?: SourceSummary
   kariz?: SourceSummary
+  neotunnel?: SourceSummary
 }
 
 export interface Agent {

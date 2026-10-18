@@ -90,9 +90,9 @@ type MonitorConfig struct {
 	TunnelName        string `json:"tunnelName,omitempty"`
 	ServiceDownIsDown bool   `json:"serviceDownIsDown,omitempty"`
 
-	// Agent server / agent tunnel (BackPack or Kariz through neo-uptime-agent).
+	// Agent server / agent tunnel (BackPack, Kariz or NeoTunnel through neo-uptime-agent).
 	AgentID int64  `json:"agentId,omitempty"`
-	Source  string `json:"source,omitempty"` // backpack | kariz
+	Source  string `json:"source,omitempty"` // backpack | kariz | neotunnel
 
 	// Other protocols.
 	Username    string `json:"username,omitempty"`

@@ -1,5 +1,5 @@
-// Package agent is neo-uptime-agent: it runs on a server that hosts BackPack
-// or Kariz tunnels, reads their state locally — no panel, no token on that
+// Package agent is neo-uptime-agent: it runs on a server that hosts BackPack,
+// Kariz or NeoTunnel tunnels, reads their state locally — no panel, no token on that
 // side — and pushes it, with the host's own vitals, to a Neo Uptime server.
 package agent
 
@@ -35,6 +35,8 @@ type Config struct {
 	BackpackInsecure bool
 
 	KarizDir string // /etc/kariz
+
+	NeoTunnelDir string // /etc/neotunnel
 
 	NoPing bool // do not ping tunnel peers
 }
@@ -91,6 +93,9 @@ func New(cfg Config) *Agent {
 	if cfg.KarizDir == "" {
 		cfg.KarizDir = "/etc/kariz"
 	}
+	if cfg.NeoTunnelDir == "" {
+		cfg.NeoTunnelDir = "/etc/neotunnel"
+	}
 	tr := http.DefaultTransport.(*http.Transport).Clone()
 	tr.TLSClientConfig = &tls.Config{InsecureSkipVerify: cfg.Insecure} //nolint:gosec // operator's choice
 	a := &Agent{
@@ -116,10 +121,11 @@ func (a *Agent) Collect(ctx context.Context) *agentproto.Report {
 	a.mu.Unlock()
 
 	var wg sync.WaitGroup
-	wg.Add(3)
+	wg.Add(4)
 	go func() { defer wg.Done(); r.System = a.sys.sample() }()
 	go func() { defer wg.Done(); r.Backpack = collectBackpack(ctx, a.cfg) }()
 	go func() { defer wg.Done(); r.Kariz = collectKariz(ctx, a.cfg) }()
+	go func() { defer wg.Done(); r.NeoTunnel = collectNeoTunnel(ctx, a.cfg) }()
 	wg.Wait()
 	a.probe.attach(r)
 	return r

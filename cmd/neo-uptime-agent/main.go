@@ -1,5 +1,5 @@
-// Command neo-uptime-agent reports a server's health and its BackPack and
-// Kariz tunnels to a Neo Uptime server.
+// Command neo-uptime-agent reports a server's health and its BackPack,
+// Kariz and NeoTunnel tunnels to a Neo Uptime server.
 package main
 
 import (
@@ -59,6 +59,7 @@ Flags (or environment):
   --backpack-api    BACKPACK_API         read BackPack's panel API instead of its files
   --backpack-token  BACKPACK_TOKEN       read token for --backpack-api
   --kariz-dir       KARIZ_DIR            default /etc/kariz
+  --neotunnel-dir   NEOTUNNEL_DIR        default /etc/neotunnel
   --no-ping         NEO_AGENT_NO_PING    do not ping tunnel peers
 `, version.Version)
 }
@@ -79,13 +80,14 @@ func main() {
 	bpAPI := fs.String("backpack-api", env("BACKPACK_API", ""), "")
 	bpToken := fs.String("backpack-token", env("BACKPACK_TOKEN", ""), "")
 	karizDir := fs.String("kariz-dir", env("KARIZ_DIR", "/etc/kariz"), "")
+	ntDir := fs.String("neotunnel-dir", env("NEOTUNNEL_DIR", "/etc/neotunnel"), "")
 	noPing := fs.Bool("no-ping", envBool("NEO_AGENT_NO_PING", false), "")
 	_ = fs.Parse(args)
 
 	cfg := agent.Config{
 		Server: *server, Token: *token, Interval: time.Duration(*interval) * time.Second, Insecure: *insecure,
 		BackpackDir: *bpDir, BackpackAPI: *bpAPI, BackpackToken: *bpToken, BackpackInsecure: true,
-		KarizDir: *karizDir, NoPing: *noPing,
+		KarizDir: *karizDir, NeoTunnelDir: *ntDir, NoPing: *noPing,
 	}
 	a := agent.New(cfg)
 
@@ -110,14 +112,17 @@ func main() {
 		if err != nil {
 			log.Fatalf("not accepted: %v", err)
 		}
-		bp, kz := 0, 0
+		bp, kz, nt := 0, 0, 0
 		if r.Backpack != nil {
 			bp = len(r.Backpack.Tunnels)
 		}
 		if r.Kariz != nil {
 			kz = len(r.Kariz.Tunnels)
 		}
-		fmt.Printf("accepted as %q through %s — %d BackPack and %d Kariz tunnel(s) reported\n", ack.Name, a.Current(), bp, kz)
+		if r.NeoTunnel != nil {
+			nt = len(r.NeoTunnel.Tunnels)
+		}
+		fmt.Printf("accepted as %q through %s — %d BackPack, %d Kariz and %d NeoTunnel tunnel(s) reported\n", ack.Name, a.Current(), bp, kz, nt)
 	case "ad":
 		fi, err := os.Stdout.Stat()
 		ads.Print(os.Stdout, err == nil && fi.Mode()&os.ModeCharDevice != 0)

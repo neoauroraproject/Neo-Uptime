@@ -256,7 +256,7 @@ func (s *Server) normalize(ctx context.Context, m *store.Monitor, existing *stor
 			return fmt.Errorf("choose a server (agent)")
 		}
 		if m.Type == monitor.TypeAgentTunnel {
-			if c.Source != "kariz" {
+			if !monitor.KnownSource(c.Source) {
 				c.Source = "backpack"
 			}
 			if strings.TrimSpace(c.TunnelName) == "" {

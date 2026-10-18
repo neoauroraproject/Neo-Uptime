@@ -284,7 +284,7 @@ export function About() {
   const install = `bash <(curl -fsSL https://raw.githubusercontent.com/${repo}/main/install.sh)`
   return (
     <Card>
-      <CardHeader title={t('About Neo Uptime')} subtitle={t('Self-hosted uptime monitoring with BackPack and Kariz tunnel support.')} />
+      <CardHeader title={t('About Neo Uptime')} subtitle={t('Self-hosted uptime monitoring with BackPack, Kariz and NeoTunnel tunnel support.')} />
       <div className="px-5 pb-5 space-y-5">
         <dl className="grid sm:grid-cols-2 gap-4 text-sm">
           <div><dt className="text-muted text-[12.5px]">{t('Version')}</dt><dd className="font-mono mt-0.5" dir="ltr">{info?.version ?? version}</dd></div>

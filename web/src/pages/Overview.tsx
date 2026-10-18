@@ -93,7 +93,7 @@ export default function Overview() {
           <Empty
             icon={<Activity className="size-6" />}
             title={t('Start monitoring')}
-            body={t('Add a website, port, DNS record or database — or install the agent on a server and its BackPack and Kariz tunnels become monitors automatically.')}
+            body={t('Add a website, port, DNS record or database — or install the agent on a server and its BackPack, Kariz and NeoTunnel tunnels become monitors automatically.')}
             action={
               canEdit(role) && (
                 <div className="flex flex-wrap justify-center gap-2">

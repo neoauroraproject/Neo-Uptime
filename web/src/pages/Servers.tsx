@@ -1,14 +1,16 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useState, type ReactNode } from 'react'
 import { Link } from 'react-router-dom'
 import { ArrowDown, ArrowUp, CircleArrowUp, CircleCheck, Cpu, Download, Ellipsis, Gauge, HardDrive, KeyRound, LoaderCircle, MemoryStick, Pencil, Plus, RefreshCw, Route as RouteIcon, Server, Terminal, Trash2 } from 'lucide-react'
 import { api } from '../lib/api'
 import { canEdit, useApp } from '../lib/store'
 import { bytes, clsx, duration, n, pct, rate, timeAgo } from '../lib/format'
 import { useT } from '../lib/i18n'
-import type { Agent, AgentAddresses, AgentSource } from '../lib/types'
+import type { Agent, AgentAddresses, AgentSource, TunnelSource } from '../lib/types'
 import { Alert, Button, Card, Checkbox, CopyButton, Empty, Field, IconButton, Input, Menu, Modal, Select, Skeleton, Switch, confirm, toast, useNow, Segmented, Badge, Spinner } from '../components/ui'
 import { CountryPicker, Flag, countryName } from '../components/flag'
-import { SourceBadge } from '../components/meta'
+import { SourceBadge, tunnelSources } from '../components/meta'
+
+type AgentTunnels = Partial<Record<TunnelSource, AgentSource>> & { imported: Record<string, number>; install: string }
 import { TunnelBadges } from '../components/tunnel'
 import { AdCard } from '../components/AdCard'
 import { SpeedDialog, SpeedLine } from '../components/SpeedTest'
@@ -58,7 +60,7 @@ export function InstallBox({ command, addresses, keepToken }: { command: string;
               ? t('Straight to this server’s IP ({addr}). The domain is only tried when the IP cannot be reached.', { addr: direct.replace(/^https?:\/\//, '') })
               : t('This server’s public IP is not known here — open the panel by its IP once, or pick another way.'))}
             {route === 'domain' && t('Through {addr}. Use it when the domain reaches this panel directly; behind a CDN such as Cloudflare it may not.', { addr: pub.replace(/^https?:\/\//, '') })}
-            {route === 'tunnel' && t('On that server, forward a port of its BackPack or Kariz tunnel to this panel’s port {port}. Reports then travel inside the tunnel, so filtering in between does not matter; the IP is tried when the tunnel is down.', { port: addresses.port })}
+            {route === 'tunnel' && t('On that server, forward a port of its BackPack, Kariz or NeoTunnel tunnel to this panel’s port {port}. Reports then travel inside the tunnel, so filtering in between does not matter; the IP is tried when the tunnel is down.', { port: addresses.port })}
           </p>
           {route === 'tunnel' && (
             <label className="flex items-center gap-3 text-[13px]">
@@ -123,7 +125,7 @@ function AddDialog({ open, onClose, edit }: { open: boolean; onClose: () => void
 
   return (
     <Modal open={open} onClose={onClose} size="lg" title={edit ? t('Edit {name}', { name: edit.name }) : created ? t('Install the agent') : t('Add a server')}
-      description={created ? undefined : t('The agent reports this server’s health and its BackPack and Kariz tunnels to Neo Uptime. It only sends; nothing connects to it.')}
+      description={created ? undefined : t('The agent reports this server’s health and its BackPack, Kariz and NeoTunnel tunnels to Neo Uptime. It only sends; nothing connects to it.')}
       footer={created ? <Button variant="primary" onClick={onClose}>{t('Done')}</Button> : <><Button variant="ghost" onClick={onClose}>{t('Cancel')}</Button><Button variant="primary" loading={busy} disabled={!f.name} onClick={save}>{edit ? t('Save') : t('Create & show install command')}</Button></>}>
       {created ? (
         <div className="space-y-5">
@@ -133,7 +135,7 @@ function AddDialog({ open, onClose, edit }: { open: boolean; onClose: () => void
             {live?.online ? <CircleCheck className="size-5 text-up" /> : <LoaderCircle className="size-5 text-muted animate-spin" />}
             <div className="text-sm">
               {live?.online
-                ? t('Reporting! {bp} BackPack and {kz} Kariz tunnels found; they are being added as monitors.', { bp: live.info?.backpack?.tunnels ?? 0, kz: live.info?.kariz?.tunnels ?? 0 })
+                ? t('Reporting! {bp} BackPack, {kz} Kariz and {nt} NeoTunnel tunnels found; they are being added as monitors.', { bp: live.info?.backpack?.tunnels ?? 0, kz: live.info?.kariz?.tunnels ?? 0, nt: live.info?.neotunnel?.tunnels ?? 0 })
                 : t('Waiting for the first report…')}
             </div>
           </div>
@@ -159,7 +161,7 @@ function AddDialog({ open, onClose, edit }: { open: boolean; onClose: () => void
                 {[10, 20, 30, 60, 120].map((s) => <option key={s} value={s}>{s < 60 ? t('{n} seconds', { n: s }) : t('{n} minutes', { n: s / 60 })}</option>)}
               </Select>
             </Field>
-            <div className="sm:pt-6"><Switch checked={f.autoImport} onChange={(v) => setF({ ...f, autoImport: v })} label={t('Add its tunnels automatically')} description={t('Every BackPack and Kariz tunnel on the server becomes a monitor.')} /></div>
+            <div className="sm:pt-6"><Switch checked={f.autoImport} onChange={(v) => setF({ ...f, autoImport: v })} label={t('Add its tunnels automatically')} description={t('Every BackPack, Kariz and NeoTunnel tunnel on the server becomes a monitor.')} /></div>
           </div>
         </div>
       )}
@@ -169,16 +171,16 @@ function AddDialog({ open, onClose, edit }: { open: boolean; onClose: () => void
 
 function TunnelsDialog({ agent, onClose }: { agent: Agent | null; onClose: () => void }) {
   const t = useT()
-  const [data, setData] = useState<{ backpack?: AgentSource; kariz?: AgentSource; imported: Record<string, number>; install: string } | null>(null)
+  const [data, setData] = useState<AgentTunnels | null>(null)
   const [picked, setPicked] = useState<Set<string>>(new Set())
   const [busy, setBusy] = useState(false)
   useEffect(() => {
     if (!agent) return
     setData(null)
-    api.get<{ backpack?: AgentSource; kariz?: AgentSource; imported: Record<string, number>; install: string }>(`/api/agents/${agent.id}`).then((r) => {
+    api.get<AgentTunnels>(`/api/agents/${agent.id}`).then((r) => {
       setData(r)
       const keys: string[] = []
-      for (const [src, s] of [['backpack', r.backpack], ['kariz', r.kariz]] as const) for (const tn of s?.tunnels ?? []) if (!r.imported[`${src}/${tn.name}`]) keys.push(`${src}/${tn.name}`)
+      for (const src of tunnelSources) for (const tn of r[src]?.tunnels ?? []) if (!r.imported[`${src}/${tn.name}`]) keys.push(`${src}/${tn.name}`)
       setPicked(new Set(keys))
     }).catch(() => {})
   }, [agent])
@@ -196,12 +198,12 @@ function TunnelsDialog({ agent, onClose }: { agent: Agent | null; onClose: () =>
       setBusy(false)
     }
   }
-  const sections = data ? ([['backpack', data.backpack], ['kariz', data.kariz]] as const).filter(([, s]) => s) : []
+  const sections = data ? tunnelSources.map((src) => [src, data[src]] as const).filter(([, s]) => s) : []
   return (
     <Modal open={!!agent} onClose={onClose} size="lg" title={t('Tunnels on {name}', { name: agent?.name ?? '' })} description={t('What the agent found on this server. Pick the ones to watch.')}
       footer={<><Button variant="ghost" onClick={onClose}>{t('Close')}</Button><Button variant="primary" loading={busy} disabled={!picked.size} onClick={run} icon={<Download className="size-4" />}>{t('Import')} {picked.size ? n(picked.size) : ''}</Button></>}>
       {!data ? <Skeleton className="h-40" /> : sections.length === 0 ? (
-        <p className="text-sm text-muted">{agent?.lastSeen ? t('Neither BackPack nor Kariz was found on this server.') : t('The agent has not reported yet.')}</p>
+        <p className="text-sm text-muted">{agent?.lastSeen ? t('No BackPack, Kariz or NeoTunnel was found on this server.') : t('The agent has not reported yet.')}</p>
       ) : (
         <div className="space-y-5">
           {sections.map(([src, s]) => (
@@ -380,10 +382,12 @@ function ServerCard({ a, onEdit, onTunnels }: { a: Agent; onEdit: () => void; on
           )}
         </div>
       )}
-      {(a.info?.backpack || a.info?.kariz) && (
+      {tunnelSources.some((src) => a.info?.[src]) && (
         <div className="flex flex-wrap gap-2">
-          {a.info?.backpack && <button onClick={onTunnels} className="inline-flex items-center gap-1.5 h-7 px-2.5 rounded-lg border border-line bg-surface-2 text-[12px] hover:border-line-strong"><SourceBadge source="backpack" /><span className="tnum" dir="ltr">{n(a.info.backpack.online)}/{n(a.info.backpack.tunnels)}</span></button>}
-          {a.info?.kariz && <button onClick={onTunnels} className="inline-flex items-center gap-1.5 h-7 px-2.5 rounded-lg border border-line bg-surface-2 text-[12px] hover:border-line-strong"><SourceBadge source="kariz" /><span className="tnum" dir="ltr">{n(a.info.kariz.online)}/{n(a.info.kariz.tunnels)}</span></button>}
+          {tunnelSources.map((src) => {
+            const s = a.info?.[src]
+            return s && <button key={src} onClick={onTunnels} className="inline-flex items-center gap-1.5 h-7 px-2.5 rounded-lg border border-line bg-surface-2 text-[12px] hover:border-line-strong"><SourceBadge source={src} /><span className="tnum" dir="ltr">{n(s.online)}/{n(s.tunnels)}</span></button>
+          })}
         </div>
       )}
       <div className="flex items-center justify-between gap-2 text-[12px] text-subtle mt-auto">
@@ -460,12 +464,19 @@ export default function Servers() {
     setTimeout(() => useApp.getState().loadAgents().catch(() => {}), 6000)
   }
   const online = agents.filter((a) => a.online).length
+  const sourceTiles = { backpack: t('BackPack tunnels'), kariz: t('Kariz tunnels'), neotunnel: t('NeoTunnel tunnels') }
+  const counted = tunnelSources.map((src) => ({ l: sourceTiles[src], v: agents.reduce((s, a) => s + (a.info?.[src]?.tunnels ?? 0), 0) })).filter((k) => k.v > 0)
+  const kpis: { l: string; v: ReactNode; tone?: string }[] = [
+    { l: t('Online'), v: <span dir="ltr">{n(online)}/{n(agents.length)}</span>, tone: online < agents.length ? 'text-down' : 'text-up' },
+    ...(counted.length ? counted : [{ l: t('Tunnels'), v: 0 }]).map((k) => ({ l: k.l, v: n(k.v) })),
+    { l: t('Traffic now'), v: rate(agents.reduce((s, a) => s + (a.info?.system.netRxRate ?? 0) + (a.info?.system.netTxRate ?? 0), 0)) },
+  ]
   return (
     <div className="p-4 sm:p-6 lg:p-8 space-y-6 w-full max-w-[1440px] mx-auto">
       <div className="flex flex-wrap items-end justify-between gap-4">
         <div>
           <h1 className="font-display text-[28px] font-semibold tracking-tight">{t('Servers')}</h1>
-          <p className="text-sm text-muted mt-1">{t('Servers running neo-uptime-agent — their health, and their BackPack and Kariz tunnels, pushed here with a token.')}</p>
+          <p className="text-sm text-muted mt-1">{t('Servers running neo-uptime-agent — their health, and their BackPack, Kariz and NeoTunnel tunnels, pushed here with a token.')}</p>
         </div>
         <div className="flex flex-wrap gap-2">
           {role === 'admin' && behind.length > 0 && (
@@ -477,13 +488,8 @@ export default function Servers() {
       <AdCard />
 
       {agents.length > 0 && (
-        <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-          {[
-            { l: t('Online'), v: <span dir="ltr">{n(online)}/{n(agents.length)}</span>, tone: online < agents.length ? 'text-down' : 'text-up' },
-            { l: t('BackPack tunnels'), v: n(agents.reduce((s, a) => s + (a.info?.backpack?.tunnels ?? 0), 0)) },
-            { l: t('Kariz tunnels'), v: n(agents.reduce((s, a) => s + (a.info?.kariz?.tunnels ?? 0), 0)) },
-            { l: t('Traffic now'), v: rate(agents.reduce((s, a) => s + (a.info?.system.netRxRate ?? 0) + (a.info?.system.netTxRate ?? 0), 0)) },
-          ].map((k) => (
+        <div className={clsx('grid grid-cols-2 gap-3', kpis.length > 4 ? 'lg:grid-cols-5' : 'lg:grid-cols-4')}>
+          {kpis.map((k) => (
             <div key={k.l} className="card px-5 py-4">
               <p className="text-[12.5px] text-muted">{k.l}</p>
               <p className={clsx('mt-1 font-display text-[26px] font-semibold tnum', k.tone)}>{k.v}</p>
@@ -497,7 +503,7 @@ export default function Servers() {
       ) : agents.length === 0 ? (
         <Card>
           <Empty icon={<Server className="size-6" />} title={t('Add your first server')}
-            body={t('Install the small agent on any server with one command. It reads BackPack (from its files) and Kariz (from its control sockets) on that machine and sends everything here — so Neo Uptime can run on a different server.')}
+            body={t('Install the small agent on any server with one command. It reads BackPack (from its files), Kariz (from its control sockets) and NeoTunnel (from its state files) on that machine and sends everything here — so Neo Uptime can run on a different server.')}
             action={role === 'admin' && <Button variant="primary" icon={<Plus className="size-4" />} onClick={() => setOpen(true)}>{t('Add a server')}</Button>} />
         </Card>
       ) : (

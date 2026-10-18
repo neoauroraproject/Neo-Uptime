@@ -92,6 +92,7 @@ func (s *Server) handleGetAgent(w http.ResponseWriter, r *http.Request) {
 	if st := s.agents.Get(id); st != nil && st.Report != nil {
 		out["backpack"] = st.Report.Backpack
 		out["kariz"] = st.Report.Kariz
+		out["neotunnel"] = st.Report.NeoTunnel
 	}
 	imported := map[string]int64{}
 	if list, err := s.db.ListMonitors(r.Context()); err == nil {

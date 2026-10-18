@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# Neo Uptime agent installer — run on each server that hosts BackPack or Kariz
-# tunnels (or any server you want watched). The command with your token is
+# Neo Uptime agent installer — run on each server that hosts BackPack, Kariz or
+# NeoTunnel tunnels (or any server you want watched). The command with your token is
 # shown in Neo Uptime → Servers → Add server.
 #
 #   bash <(curl -fsSL https://raw.githubusercontent.com/neoauroraproject/Neo-Uptime/main/agent.sh) \
@@ -186,7 +186,8 @@ EnvironmentFile=$ENV_FILE
 ExecStart=$BIN run
 Restart=always
 RestartSec=5
-# Root reads BackPack's files and Kariz's owner-only sockets and sends ICMP.
+# Root reads BackPack's files, Kariz's owner-only sockets and NeoTunnel's
+# owner-only state files, and sends ICMP.
 NoNewPrivileges=true
 PrivateTmp=true
 ProtectSystem=strict

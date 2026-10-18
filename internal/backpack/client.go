@@ -44,10 +44,10 @@ type RatePoint struct {
 }
 
 // Tunnel is one row of BackPack's /api/tunnels. It is also the shape every
-// tunnel is reported in, whatever runs it: the agent converts Kariz tunnels
-// into it too, with Source saying which.
+// tunnel is reported in, whatever runs it: the agent converts Kariz and NeoTunnel
+// tunnels into it too, with Source saying which.
 type Tunnel struct {
-	Source         string      `json:"source,omitempty"` // backpack | kariz
+	Source         string      `json:"source,omitempty"` // backpack | kariz | neotunnel
 	LastError      string      `json:"lastError,omitempty"`
 	Name           string      `json:"name"`
 	Role           string      `json:"role"`
@@ -73,6 +73,7 @@ type Tunnel struct {
 	OutBytes       uint64      `json:"outBytes,omitempty"`
 	TotalBytes     uint64      `json:"totalBytes,omitempty"`
 	QuotaLimit     uint64      `json:"quotaLimit,omitempty"`
+	QuotaUsed      uint64      `json:"quotaUsed,omitempty"` // when not TotalBytes (NeoTunnel: this month)
 	QuotaHit       bool        `json:"quotaHit,omitempty"`
 	KCP            *KCPStats   `json:"kcp,omitempty"`
 	KCPLossPercent float64     `json:"kcpLossPercent,omitempty"`

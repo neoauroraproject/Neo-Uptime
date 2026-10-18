@@ -24,7 +24,7 @@ function AuthLayout({ children }: { children: ReactNode }) {
             {t('Know the moment')}<br />{t('something')} <span className="text-accent-ink">{t('goes dark.')}</span>
           </h1>
           <p className="mt-5 text-[15px] text-muted leading-relaxed max-w-md">
-            {t('Websites, ports, DNS, databases — and every BackPack and Kariz tunnel — watched around the clock, with alerts where you already are.')}
+            {t('Websites, ports, DNS, databases — and every BackPack, Kariz and NeoTunnel tunnel — watched around the clock, with alerts where you already are.')}
           </p>
           <div className="mt-10 card p-5">
             <div className="flex items-center justify-between">
@@ -44,7 +44,7 @@ function AuthLayout({ children }: { children: ReactNode }) {
           </div>
         </div>
         <div className="relative flex gap-6 text-[13px] text-muted">
-          <span className="inline-flex items-center gap-2"><Cable className="size-4 text-accent-ink" />{t('BackPack & Kariz')}</span>
+          <span className="inline-flex items-center gap-2"><Cable className="size-4 text-accent-ink" />{t('BackPack, Kariz & NeoTunnel')}</span>
           <span className="inline-flex items-center gap-2"><Zap className="size-4 text-accent-ink" />{t('Live updates')}</span>
           <span className="inline-flex items-center gap-2"><ShieldCheck className="size-4 text-accent-ink" />{t('2FA & roles')}</span>
         </div>
