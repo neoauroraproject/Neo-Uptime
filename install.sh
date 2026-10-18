@@ -432,7 +432,8 @@ menu() {
       state="${c_red}stopped${c_off}"; toggle="Start"
     fi
     printf '  Neo Uptime %s%s%s · %s\n' "$c_bold" "${version:-?}" "$c_off" "$state"
-    printf '  %sPanel%s  http://%s:%s\n\n' "$c_lime" "$c_off" "$ip" "$port"
+    printf '  %sPanel%s  http://%s:%s\n' "$c_lime" "$c_off" "$ip" "$port"
+    printf '  %sNews%s   %s\n\n' "$c_dim" "$c_off" "$CHANNEL"
     cat <<EOF
   1) Update to the latest version
   2) Forgot password — set a new admin password

@@ -3,6 +3,8 @@ import { clsx } from '../lib/format'
 
 export const REPO_URL = 'https://github.com/neoauroraproject/Neo-Uptime'
 export const CHANNEL_URL = 'https://t.me/neoaurora'
+/** Donations: USDT on BNB Smart Chain (BEP20). */
+export const DONATE_USDT_BEP20 = '0xacA935a5955a756BedaE4738304274EdeE0223D5'
 
 // Brand marks are drawn inline: the icon set has no logos.
 export function GitHubMark({ className }: { className?: string }) {

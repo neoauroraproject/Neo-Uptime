@@ -6,7 +6,7 @@ import { bytes, duration, fmtDate, n, timeAgo } from '../../lib/format'
 import { useT } from '../../lib/i18n'
 import type { ApiKey, Tag, User } from '../../lib/types'
 import { Alert, Badge, Button, Card, CardHeader, CopyButton, Empty, Field, IconButton, Input, Menu, Modal, Segmented, Select, Switch, TagChip, confirm, toast } from '../../components/ui'
-import { ProjectLinks } from '../../components/brand'
+import { DONATE_USDT_BEP20, ProjectLinks } from '../../components/brand'
 
 /* ---------- tags ---------- */
 
@@ -301,6 +301,13 @@ export function About() {
         </Field>
         <Field label={t('Project')} help={t('News, releases and help in the Telegram channel.')}>
           <ProjectLinks labels />
+        </Field>
+        <Field label={t('Support Neo Uptime')} help={t('If Neo Uptime helps you, a donation keeps its development going. Thank you!')}>
+          <div className="flex gap-2 items-center">
+            <span className="shrink-0 text-[12px] font-semibold text-muted" dir="ltr">USDT (BEP20)</span>
+            <code className="flex-1 min-w-0 truncate rounded-xl bg-surface-2 border border-line px-3 py-2.5 font-mono text-[12.5px]" dir="ltr">{DONATE_USDT_BEP20}</code>
+            <CopyButton text={DONATE_USDT_BEP20} />
+          </div>
         </Field>
       </div>
     </Card>

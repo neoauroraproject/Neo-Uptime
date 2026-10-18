@@ -191,3 +191,6 @@ make linux   # release archives in dist/ (server and agent)
 ```
 
 The backend is Go with SQLite through a pure-Go driver (no CGO) and Xray-core built in. The UI is React, TypeScript, Vite and Tailwind CSS, embedded in the binary.
+
+---
+News and help: [t.me/neoaurora](https://t.me/neoaurora) · Support the project: USDT (BEP20) `0xacA935a5955a756BedaE4738304274EdeE0223D5`

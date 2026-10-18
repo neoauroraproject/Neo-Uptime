@@ -1055,6 +1055,8 @@ export const fa: Record<string, string> = {
   'Neo Uptime then also listens on ports 80 and 443. Another web server on those ports (nginx, Caddy, a panel) has to move, or keep using it as your proxy instead.': 'در این حالت Neo Uptime روی پورت‌های ۸۰ و ۴۴۳ هم گوش می‌دهد. اگر وب‌سرور دیگری (nginx، Caddy یا یک پنل) روی این پورت‌هاست، باید جابه‌جا شود — یا همان را به‌عنوان پراکسی نگه دارید.',
   'New channel': 'کانال جدید',
   'News, releases and help in the Telegram channel.': 'اخبار، نسخه‌های جدید و راهنما در کانال تلگرام.',
+  'Support Neo Uptime': 'حمایت از Neo Uptime',
+  'If Neo Uptime helps you, a donation keeps its development going. Thank you!': 'اگر Neo Uptime برایتان مفید است، با حمایت مالی به ادامه‌ی توسعه‌اش کمک کنید. ممنونیم!',
   'Next': 'بعدی',
   'No DNS record yet': 'هنوز رکورد DNS ندارد',
   'No certificate yet': 'هنوز گواهی ندارد',

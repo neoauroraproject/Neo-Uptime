@@ -4,13 +4,17 @@
 
 # Neo Uptime
 
+[![Views](https://komarev.com/ghpvc/?username=neoauroraproject&repo=Neo-Uptime&label=Views&color=orange&style=flat-square)](https://github.com/neoauroraproject/Neo-Uptime)
+[![Release](https://img.shields.io/github/v/release/neoauroraproject/Neo-Uptime?style=flat-square&color=a3e635&labelColor=111111)](https://github.com/neoauroraproject/Neo-Uptime/releases/latest)
+[![Telegram](https://img.shields.io/badge/Telegram-@neoaurora-26A5E4?style=flat-square&logo=telegram&logoColor=white&labelColor=111111)](https://t.me/neoaurora)
+
 <div dir="rtl">
 
 **مانیتورینگ ساده و فارسی برای سرورها، تانل‌های BackPack، Kariz و NeoTunnel و کانفیگ‌های V2Ray**
 
 هر وقت سرور، تانل یا کانفیگی قطع یا کند شد، در تلگرام خبرتان می‌کند.
 
-[کانال تلگرام](https://t.me/neoaurora) · [نصب](#نصب) · [دستورات مهم](#دستورات-مهم)
+[کانال تلگرام](https://t.me/neoaurora) · [نصب](#نصب) · [دستورات مهم](#دستورات-مهم) · [حمایت](#-donation-حمایت-مالی)
 
 </div>
 
@@ -136,3 +140,33 @@ bash <(curl -fsSL https://raw.githubusercontent.com/neoauroraproject/Neo-Uptime/
 - مجوز: [MIT](LICENSE). این برنامه از [Xray-core](https://github.com/XTLS/Xray-core) (مجوز MPL-2.0) و پرچم‌های [flag-icons](https://github.com/lipis/flag-icons) (MIT) استفاده می‌کند.
 
 </div>
+
+---
+
+## 💖 Donation (حمایت مالی)
+
+<div dir="rtl">
+
+اگر Neo Uptime برایتان مفید بوده و دوست دارید توسعه‌اش ادامه پیدا کند، می‌توانید از این راه حمایت کنید:
+
+</div>
+
+If you find this project helpful and want to support its development, you can donate via:
+
+* **USDT (BEP20):**
+  `0xacA935a5955a756BedaE4738304274EdeE0223D5`
+
+## 🧩 Other Neo Aurora projects (پروژه‌های دیگر)
+
+| | |
+|---|---|
+| [HMPanel](https://github.com/neoauroraproject/hmpanel) | HMray Panel — پنل مدیریت فروش VPN |
+| [NeoTunnel](https://github.com/neoauroraproject/neotunnel) | تانل‌های کرنلی سریع (6to4، GRE، VXLAN، WireGuard …) با پنل فارسی |
+| [3xFactor](https://github.com/neoauroraproject/3xfactor) | ضریب ترافیک برای 3x-ui با پنل اختصاصی |
+| [NeoConfig](https://github.com/neoauroraproject/NeoConfig) | اپ اشتراک VPN وایت‌لیبل برای ثنایی، پاسارگارد و HMPanel |
+| [NeoTemplate](https://github.com/neoauroraproject/NeoTemplate) | قالب‌های صفحه‌ی اشتراک برای 3x-ui |
+
+---
+Telegram Channels: [NeoAurora](https://t.me/neoaurora) / [HMPanel](https://t.me/hmpanel)
+
+*Built with ❤️ by Neo Aurora.*

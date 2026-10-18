@@ -48,7 +48,7 @@ func defaultDataDir() string {
 }
 
 func usage() {
-	fmt.Fprintf(os.Stderr, `Neo Uptime %s — uptime monitoring with BackPack tunnel support
+	fmt.Fprintf(os.Stderr, `Neo Uptime %s — uptime monitoring with BackPack, Kariz and NeoTunnel tunnel support
 
 Usage:
   neo-uptime [serve] [flags]          run the server (default)
@@ -69,6 +69,8 @@ Flags (or environment):
   --data   NEO_UPTIME_DATA      data directory        (default %s)
   --tls-cert NEO_UPTIME_TLS_CERT  certificate (PEM, with chain)
   --tls-key  NEO_UPTIME_TLS_KEY   private key (PEM)
+
+News and help: https://t.me/neoaurora
 `, version.Version, defaultDataDir())
 }
 

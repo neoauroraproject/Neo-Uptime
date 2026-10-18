@@ -61,6 +61,8 @@ Flags (or environment):
   --kariz-dir       KARIZ_DIR            default /etc/kariz
   --neotunnel-dir   NEOTUNNEL_DIR        default /etc/neotunnel
   --no-ping         NEO_AGENT_NO_PING    do not ping tunnel peers
+
+News and help: https://t.me/neoaurora
 `, version.Version)
 }
 

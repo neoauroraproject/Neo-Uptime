@@ -12,6 +12,7 @@ BIN="/usr/local/bin/neo-uptime-agent"
 CONF_DIR="/etc/neo-uptime-agent"
 ENV_FILE="$CONF_DIR/agent.env"
 UNIT="/etc/systemd/system/neo-uptime-agent.service"
+CHANNEL="https://t.me/neoaurora"
 
 SERVER=""
 TOKEN=""
@@ -44,6 +45,8 @@ Neo Uptime agent installer
 
 Run it again without --server/--token for a menu: update, change the address
 or token, test, status, uninstall.
+
+News and help: https://t.me/neoaurora
 EOF
 }
 
@@ -83,6 +86,7 @@ if [ "$UNINSTALL" -eq 0 ] && [ -z "$SERVER$TOKEN" ] && [ -x "$BIN" ] && [ -f "$E
   cur_version="$("$BIN" version 2>/dev/null | awk '{print $2}' || true)"
   if systemctl is-active --quiet neo-uptime-agent; then state="${c_green}running${c_off}"; else state="${c_red}stopped${c_off}"; fi
   printf '\n  neo-uptime-agent %s · reporting to %s · %s\n' "${cur_version:-?}" "$cur_server" "$state"
+  printf '  %sNews%s  %s\n' "$c_dim" "$c_off" "$CHANNEL"
   show_ad
   printf '%s\n' "  1) Update the agent" "  2) Change the Neo Uptime address" "  3) Change the token" \
     "  4) Send a report now (test)" "  5) Status and recent logs" "  6) Uninstall the agent" "  0) Exit" ""
@@ -216,5 +220,6 @@ else
 fi
 printf '  %sLogs%s       journalctl -u neo-uptime-agent -f\n' "$c_dim" "$c_off"
 printf '  %sSettings%s   %s\n' "$c_dim" "$c_off" "$ENV_FILE"
-printf '  %sOne report%s neo-uptime-agent once\n\n' "$c_dim" "$c_off"
+printf '  %sOne report%s neo-uptime-agent once\n' "$c_dim" "$c_off"
+printf '  %sNews%s       %s\n\n' "$c_dim" "$c_off" "$CHANNEL"
 show_ad
