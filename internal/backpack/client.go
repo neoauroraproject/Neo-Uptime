@@ -50,6 +50,7 @@ type Tunnel struct {
 	Source         string      `json:"source,omitempty"` // backpack | kariz | neotunnel
 	LastError      string      `json:"lastError,omitempty"`
 	Name           string      `json:"name"`
+	Label          string      `json:"label,omitempty"` // the display name the tunnel program gives it (NeoTunnel 0.8.3+); Name stays its ID
 	Role           string      `json:"role"`
 	Transport      string      `json:"transport"`
 	Direction      string      `json:"direction"`
@@ -65,6 +66,7 @@ type Tunnel struct {
 	TunnelPort     string      `json:"tunnelPort"`
 	ServiceDown    string      `json:"serviceDown,omitempty"`
 	Node           string      `json:"node,omitempty"`
+	NodeLabel      string      `json:"nodeLabel,omitempty"` // the far server's display name
 	Uptime         string      `json:"uptime,omitempty"`
 	BytesIn        string      `json:"bytesIn,omitempty"`
 	BytesOut       string      `json:"bytesOut,omitempty"`

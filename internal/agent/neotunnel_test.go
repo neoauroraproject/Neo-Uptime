@@ -82,3 +82,48 @@ func TestNeoTunnelFromFiles(t *testing.T) {
 		t.Error("a missing NeoTunnel directory should report nothing")
 	}
 }
+
+// NeoTunnel 0.8.3 display names: the tunnel's label, the far server's
+// label, and tunnels pushed by more than one main server.
+func TestNeoTunnelDisplayNames(t *testing.T) {
+	dir := t.TempDir()
+	write(t, filepath.Join(dir, "state.json"), `{
+  "schema": 1, "self": "ir1", "label": "تهران آسیاتک",
+  "peers": [{"name": "de", "label": "Hetzner FSN"}, {"name": "nl", "address": "203.0.113.57"}],
+  "tunnels": [
+    {"name": "de", "label": "  آلمان VIP  ", "kind": "gre", "sides": [{"node": "ir1", "endpoint": "203.0.113.10"}, {"node": "de", "endpoint": "198.51.100.24"}]},
+    {"name": "nl", "kind": "gre", "sides": [{"node": "ir1", "endpoint": "203.0.113.10"}, {"node": "nl", "endpoint": "203.0.113.57"}]}
+  ],
+  "managed": {"master": {"name": "hub-a"}, "self": "iran-a", "tunnels": [
+    {"name": "a1", "label": "Hub A link", "kind": "vxlan", "sides": [{"node": "hub-a", "endpoint": "192.0.2.1"}, {"node": "iran-a", "endpoint": "203.0.113.10"}]}
+  ]},
+  "more_masters": [{"master": {"name": "hub-b"}, "self": "iran-b", "tunnels": [
+    {"name": "b1", "kind": "gre", "sides": [{"node": "iran-b", "endpoint": "203.0.113.10"}, {"node": "hub-b", "endpoint": "192.0.2.2"}]}
+  ]}]
+}`)
+	old := ntIfUp
+	ntIfUp = func(string) (bool, bool) { return true, true }
+	defer func() { ntIfUp = old }()
+
+	src := collectNeoTunnel(context.Background(), Config{NeoTunnelDir: dir})
+	by := map[string]int{}
+	for i, tn := range src.Tunnels {
+		by[tn.Name] = i
+	}
+	if len(src.Tunnels) != 4 {
+		t.Fatalf("want de, nl, a1 and b1 (b1 from the second main server), got %+v", src.Tunnels)
+	}
+	de := src.Tunnels[by["de"]]
+	if de.Label != "آلمان VIP" || de.Node != "de" || de.NodeLabel != "Hetzner FSN" {
+		t.Errorf("de: label %q, node %q / %q", de.Label, de.Node, de.NodeLabel)
+	}
+	if nl := src.Tunnels[by["nl"]]; nl.Label != "" || nl.NodeLabel != "" {
+		t.Errorf("nl has no display names: %+v", nl)
+	}
+	if a1 := src.Tunnels[by["a1"]]; a1.Label != "Hub A link" || a1.Role != "destination" || a1.Node != "hub-a" {
+		t.Errorf("a1: %+v", a1)
+	}
+	if b1 := src.Tunnels[by["b1"]]; b1.Role != "destination" || b1.Node != "hub-b" {
+		t.Errorf("b1: %+v", b1)
+	}
+}

@@ -1384,4 +1384,7 @@ export const fa: Record<string, string> = {
   'Latest': 'آخرین',
   'Change from the first half of this window': 'تغییر نسبت به نیمهٔ اول این بازه',
   'No response data yet': 'هنوز داده‌ای از زمان پاسخ نیست',
+  // tunnel display names (NeoTunnel 0.8.3)
+  'In {program}: {name}': 'در {program}: {name}',
+  'Other end: {name}': 'سمت دیگر: {name}',
 }

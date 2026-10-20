@@ -29,6 +29,7 @@ type ntSide struct {
 
 type ntTunnel struct {
 	Name     string    `json:"name"`
+	Label    string    `json:"label"` // display name (0.8.3+); Name stays the ID
 	Kind     string    `json:"kind"`
 	Over     string    `json:"over"`
 	Sides    [2]ntSide `json:"sides"`
@@ -47,19 +48,69 @@ type ntForward struct {
 	Ports  string `json:"ports"`
 }
 
-type ntState struct {
+// ntManaged is what a main server pushed here: its tunnels with this
+// server, under the name it knows this server by.
+type ntManaged struct {
+	Master struct {
+		Name string `json:"name"`
+	} `json:"master"`
 	Self     string      `json:"self"`
 	Tunnels  []ntTunnel  `json:"tunnels"`
 	Forwards []ntForward `json:"forwards"`
-	Managed  *struct {
-		Self     string      `json:"self"`
-		Tunnels  []ntTunnel  `json:"tunnels"`
-		Forwards []ntForward `json:"forwards"`
-	} `json:"managed"`
+}
+
+type ntPeer struct {
+	Name  string `json:"name"`
+	Label string `json:"label"`
+}
+
+type ntState struct {
+	Self     string       `json:"self"`
+	Label    string       `json:"label"` // this server's display name (0.8.3+)
+	Tunnels  []ntTunnel   `json:"tunnels"`
+	Forwards []ntForward  `json:"forwards"`
+	Peers    []ntPeer     `json:"peers"`
+	Managed  *ntManaged   `json:"managed"`
+	More     []*ntManaged `json:"more_masters"` // a server can belong to several main servers
+}
+
+// masters is every main server that pushed tunnels here.
+func (s *ntState) masters() []*ntManaged {
+	var out []*ntManaged
+	if s.Managed != nil {
+		out = append(out, s.Managed)
+	}
+	for _, m := range s.More {
+		if m != nil {
+			out = append(out, m)
+		}
+	}
+	return out
 }
 
 func (s *ntState) isSelf(node string) bool {
-	return node != "" && (node == s.Self || (s.Managed != nil && node == s.Managed.Self))
+	if node == "" {
+		return false
+	}
+	if node == s.Self {
+		return true
+	}
+	for _, m := range s.masters() {
+		if node == m.Self {
+			return true
+		}
+	}
+	return false
+}
+
+// nodeLabel is the display name this server gives another one, if any.
+func (s *ntState) nodeLabel(node string) string {
+	for _, p := range s.Peers {
+		if p.Name == node {
+			return p.Label
+		}
+	}
+	return ""
 }
 
 type ntHealth struct {
@@ -129,9 +180,17 @@ func collectNeoTunnel(_ context.Context, cfg Config) *agentproto.Source {
 		}
 	}
 	forwards = append(forwards, st.Forwards...)
-	if m := st.Managed; m != nil {
+	seen := map[string]bool{}
+	for _, e := range all {
+		seen[e.t.Name] = true
+	}
+	for _, m := range st.masters() {
 		for _, t := range m.Tunnels {
+			if seen[t.Name] {
+				continue
+			}
 			if st.isSelf(t.Sides[0].Node) || st.isSelf(t.Sides[1].Node) {
+				seen[t.Name] = true
 				all = append(all, entry{t, true})
 			}
 		}
@@ -173,11 +232,12 @@ func collectNeoTunnel(_ context.Context, cfg Config) *agentproto.Source {
 		}
 		kind := firstSet(t.Mode, t.Kind)
 		out := backpack.Tunnel{
-			Source: "neotunnel", Name: t.Name, Role: map[bool]string{false: "main", true: "destination"}[e.managed],
+			Source: "neotunnel", Name: t.Name, Label: strings.TrimSpace(t.Label), Role: map[bool]string{false: "main", true: "destination"}[e.managed],
 			Transport: kind, Carrier: kind, Direction: "direct", Ping: -1,
 			Node: t.Sides[1-me].Node, Addr: bottom.Sides[1-me].Endpoint, Preset: presetLabel(firstSet(t.Profile, "balanced")),
 			BandwidthMbps: t.RateMbit,
 		}
+		out.NodeLabel = strings.TrimSpace(st.nodeLabel(out.Node))
 		if bottom.Port != 0 {
 			out.TunnelPort = strconv.Itoa(int(bottom.Port))
 			out.Addr = joinHostPort(out.Addr, out.TunnelPort)

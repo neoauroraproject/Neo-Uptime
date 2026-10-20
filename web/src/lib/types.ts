@@ -116,6 +116,11 @@ export interface Tunnel {
   source?: TunnelSource
   lastError?: string
   name: string
+  /** The display name its program gives it (NeoTunnel 0.8.3+); name stays its ID. */
+  label?: string
+  /** The far server: its ID and display name. */
+  node?: string
+  nodeLabel?: string
   role: string
   transport: string
   direction: string

@@ -738,7 +738,7 @@ export default function MonitorForm({ mode }: { mode: 'add' | 'edit' | 'clone' }
                   {agentTunnels.length ? (
                     <Select id="atn" required value={c.tunnelName ?? ''} onChange={(e) => setD({ ...d, config: { ...c, tunnelName: e.target.value }, name: nameTouched ? d.name : e.target.value })}>
                       <option value="" disabled>{t('Choose…')}</option>
-                      {agentTunnels.map((tn) => <option key={tn.name} value={tn.name}>{tn.name} — {(tn.carrier || tn.transport || '').toUpperCase()} · {tn.state}</option>)}
+                      {agentTunnels.map((tn) => <option key={tn.name} value={tn.name}>{tn.label && tn.label !== tn.name ? `${tn.label} (${tn.name})` : tn.name}{tn.nodeLabel || tn.node ? ` ⇄ ${tn.nodeLabel || tn.node}` : ''} — {(tn.carrier || tn.transport || '').toUpperCase()} · {tn.state}</option>)}
                     </Select>
                   ) : (
                     <Input id="atn" dir="ltr" required value={c.tunnelName ?? ''} onChange={(e) => cfg('tunnelName', e.target.value)} placeholder={t('Tunnel name')} />

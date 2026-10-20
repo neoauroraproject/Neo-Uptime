@@ -93,6 +93,11 @@ type MonitorConfig struct {
 	// Agent server / agent tunnel (BackPack, Kariz or NeoTunnel through neo-uptime-agent).
 	AgentID int64  `json:"agentId,omitempty"`
 	Source  string `json:"source,omitempty"` // backpack | kariz | neotunnel
+	// TunnelLabel is the tunnel's display name in its program when the
+	// monitor was last named after it. While the monitor still carries that
+	// name, a new display name renames the monitor too; once someone names
+	// it themselves, it stays.
+	TunnelLabel string `json:"tunnelLabel,omitempty"`
 
 	// Other protocols.
 	Username    string `json:"username,omitempty"`

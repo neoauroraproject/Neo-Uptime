@@ -292,6 +292,7 @@ func (mg *Manager) IngestAgentReport(ctx context.Context, a *store.Agent, r *age
 	for _, id := range ids {
 		mg.Kick(id)
 	}
+	go mg.syncTunnelNames(a, r)
 	if a.AutoImport {
 		go func() {
 			ictx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
@@ -306,6 +307,68 @@ func (mg *Manager) IngestAgentReport(ctx context.Context, a *store.Agent, r *age
 }
 
 func agentKey(source, name string) string { return source + "\x00" + name }
+
+// TunnelDisplayName is what a tunnel is called: the display name its program
+// gives it, or its ID.
+func TunnelDisplayName(t *backpack.Tunnel) string {
+	if l := strings.TrimSpace(t.Label); l != "" {
+		return l
+	}
+	return t.Name
+}
+
+// syncTunnelNames renames the monitors of tunnels whose display name changed
+// in their program, as long as the monitor still has the name it was given
+// from it: a name someone typed is never overwritten.
+func (mg *Manager) syncTunnelNames(a *store.Agent, r *agentproto.Report) {
+	labels := map[string]string{}
+	st := &AgentState{Report: r}
+	for _, src := range TunnelSources {
+		s := st.Source(src)
+		if s == nil {
+			continue
+		}
+		for _, t := range s.Tunnels {
+			labels[agentKey(src, t.Name)] = strings.TrimSpace(t.Label)
+		}
+	}
+	mg.mu.Lock()
+	var todo []*store.Monitor
+	for _, rn := range mg.runners {
+		m := rn.m
+		if m.Type != TypeAgentTunnel || m.Config.AgentID != a.ID {
+			continue
+		}
+		label, ok := labels[agentKey(m.Config.Source, m.Config.TunnelName)]
+		if !ok || label == m.Config.TunnelLabel {
+			continue
+		}
+		todo = append(todo, m)
+	}
+	mg.mu.Unlock()
+	if len(todo) == 0 {
+		return
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+	for _, old := range todo {
+		m, err := mg.db.GetMonitor(ctx, old.ID)
+		if err != nil {
+			continue
+		}
+		label := labels[agentKey(m.Config.Source, m.Config.TunnelName)]
+		given := firstNonEmpty(m.Config.TunnelLabel, m.Config.TunnelName)
+		if m.Name == given {
+			m.Name = firstNonEmpty(label, m.Config.TunnelName)
+		}
+		m.Config.TunnelLabel = label
+		if err := mg.db.UpdateMonitor(ctx, m); err != nil {
+			log.Printf("agent %s: rename tunnel %s: %v", a.Name, m.Config.TunnelName, err)
+			continue
+		}
+		mg.Upsert(m)
+	}
+}
 
 // ImportAgentTunnels makes sure an agent has its group and server monitor,
 // and creates a monitor for each reported tunnel that has none. keys, when
@@ -411,9 +474,9 @@ func (mg *Manager) ImportAgentTunnels(ctx context.Context, agentID int64, keys [
 			country = a.Country
 		}
 		m := &store.Monitor{
-			Name: it.t.Name, Type: TypeAgentTunnel, ParentID: &gid, Active: true, Interval: o.Interval, RetryInterval: o.Interval,
+			Name: TunnelDisplayName(&it.t), Type: TypeAgentTunnel, ParentID: &gid, Active: true, Interval: o.Interval, RetryInterval: o.Interval,
 			MaxRetries: 1, Timeout: 10, Country: strings.ToLower(country),
-			Config: store.MonitorConfig{AgentID: a.ID, Source: it.source, TunnelName: it.t.Name,
+			Config: store.MonitorConfig{AgentID: a.ID, Source: it.source, TunnelName: it.t.Name, TunnelLabel: it.t.Label,
 				LatencyAlertMs: o.LatencyAlertMs, LatencyAlertFor: o.LatencyAlertFor},
 			NotificationIDs: nonNil(o.NotificationIDs),
 			Description:     strings.TrimSpace(fmt.Sprintf("%s · %s %s %s", label, strings.ToUpper(it.t.Direction), strings.ToUpper(it.t.Carrier), it.t.Preset)),

@@ -221,7 +221,11 @@ function TunnelsDialog({ agent, onClose }: { agent: Agent | null; onClose: () =>
                           <Checkbox checked={picked.has(key)} onChange={(v) => { const nx = new Set(picked); if (v) nx.add(key); else nx.delete(key); setPicked(nx) }} label={<span className="sr-only">{tn.name}</span>} />
                         )}
                         <div className="min-w-0 flex-1">
-                          <p className="font-medium">{tn.name}</p>
+                          <p className="font-medium" dir="auto">
+                            {tn.label || tn.name}
+                            {tn.label && tn.label !== tn.name && <span className="ms-2 text-[12px] font-normal text-subtle font-mono" dir="ltr">{tn.name}</span>}
+                            {(tn.nodeLabel || tn.node) && <span className="ms-2 text-[12.5px] font-normal text-muted">⇄ {tn.nodeLabel || tn.node}</span>}
+                          </p>
                           <TunnelBadges t={tn} className="mt-1" />
                           {tn.lastError && <p className="mt-1 text-[12px] text-down truncate" dir="auto">{tn.lastError}</p>}
                         </div>

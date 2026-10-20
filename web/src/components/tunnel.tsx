@@ -7,7 +7,7 @@ import { useApp } from '../lib/store'
 import { HeartbeatBar, Meter, Sparkline } from './charts'
 import { Badge, StatusPill } from './ui'
 import { Flag, countryName } from './flag'
-import { SourceBadge, tunnelSources } from './meta'
+import { SourceBadge, sourceLabel, tunnelSources } from './meta'
 
 export function TunnelBadges({ t, className }: { t: { direction?: string; carrier?: string; transport?: string; preset?: string; tunnelPort?: string }; className?: string }) {
   return (
@@ -18,6 +18,11 @@ export function TunnelBadges({ t, className }: { t: { direction?: string; carrie
       {t.tunnelPort && <Badge tone="outline" mono>{t.tunnelPort}</Badge>}
     </div>
   )
+}
+
+/** The far server of a tunnel, by its display name when it has one. */
+export function farServer(tn?: Tunnel) {
+  return tn?.nodeLabel || tn?.node || ''
 }
 
 /** The card on the Tunnels page — BackPack's monitor card, plus history. */
@@ -32,6 +37,9 @@ export function TunnelCard({ m, via }: { m: MonitorView; via?: string }) {
   const lastRate = rates.length ? rates[rates.length - 1].in + rates[rates.length - 1].out : null
   const country = m.country || tn?.peerCountry?.toLowerCase()
   const place = [tn?.peerLocation || (country ? countryName(country) : ''), tn?.peerISP].filter(Boolean).join(' · ')
+  const far = farServer(tn)
+  // The name in the tunnel program, when the monitor is called something else.
+  const programName = tn && (tn.label || tn.name) !== m.name ? tn.label || tn.name : ''
   return (
     <article className={clsx('card relative overflow-hidden flex flex-col transition-[border-color] duration-200 hover:border-line-strong', down && 'border-down/40')}>
       <div className="absolute inset-0 dot-grid opacity-50 [mask-image:linear-gradient(to_bottom,black,transparent_70%)]" aria-hidden />
@@ -48,7 +56,10 @@ export function TunnelCard({ m, via }: { m: MonitorView; via?: string }) {
               <Link to={`/dashboard/${m.id}`} className="font-display text-lg font-semibold leading-tight hover:text-accent-ink truncate" dir="auto">{m.name}</Link>
               <SourceBadge source={tn?.source ?? (m.type === 'backpack-tunnel' ? 'backpack' : m.config.source)} />
             </div>
-            <p className="text-[12.5px] text-muted truncate">{place || via || m.target}</p>
+            <p className="text-[12.5px] text-muted truncate" dir="auto">
+              {far ? <><span className="text-fg/80">{via ? `${via} ⇄ ${far}` : `⇄ ${far}`}</span>{place ? ` · ${place}` : ''}</> : place || via || m.target}
+            </p>
+            {programName && <p className="text-[11.5px] text-subtle truncate" dir="auto">{t('In {program}: {name}', { program: sourceLabel(tn?.source), name: programName })}</p>}
           </div>
           <StatusPill status={m.last?.status} active={m.active} size="sm" />
         </div>
@@ -104,9 +115,14 @@ export function TunnelDetails({ t: tn }: { t: Tunnel }) {
     <div className="space-y-5">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="flex items-center gap-2"><SourceBadge source={tn.source} /><TunnelBadges t={tn} /></div>
-        {(tn.peerLocation || tn.peerISP) && (
-          <span className="inline-flex items-center gap-1.5 text-[13px] text-muted"><MapPin className="size-3.5" />{[tn.peerLocation, tn.peerISP].filter(Boolean).join(' · ')}</span>
-        )}
+        <div className="flex flex-wrap items-center gap-x-4 gap-y-1">
+          {farServer(tn) && (
+            <span className="inline-flex items-center gap-1.5 text-[13px] text-muted" dir="auto"><Server className="size-3.5" />{t('Other end: {name}', { name: farServer(tn) })}{tn.nodeLabel && tn.node && tn.nodeLabel !== tn.node ? <span className="font-mono text-subtle" dir="ltr">({tn.node})</span> : null}</span>
+          )}
+          {(tn.peerLocation || tn.peerISP) && (
+            <span className="inline-flex items-center gap-1.5 text-[13px] text-muted"><MapPin className="size-3.5" />{[tn.peerLocation, tn.peerISP].filter(Boolean).join(' · ')}</span>
+          )}
+        </div>
       </div>
       {tn.serviceDown && (
         <p className="rounded-xl border border-pending/30 bg-pending/8 px-3 py-2 text-[13px] text-pending">{t('Forwarded service is refusing connections: {why}', { why: tn.serviceDown })}</p>
