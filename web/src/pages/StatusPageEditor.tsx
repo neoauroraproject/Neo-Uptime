@@ -1,6 +1,6 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
-import { ArrowDown, ArrowLeft, ArrowUp, Cable, CircleCheck, CircleDashed, ExternalLink, Eye, EyeOff, Globe, ImageUp, LockKeyhole, Megaphone, Plus, Save, Server, Trash2, TriangleAlert, X } from 'lucide-react'
+import { ArrowLeft, CircleCheck, CircleDashed, ExternalLink, Eye, EyeOff, Globe, ImageUp, LockKeyhole, Megaphone, Save, Trash2, TriangleAlert, X } from 'lucide-react'
 import { api, uploadImage } from '../lib/api'
 import { useApp } from '../lib/store'
 import { clsx, fmtDate, fmtDateTime } from '../lib/format'
@@ -8,9 +8,7 @@ import { useT } from '../lib/i18n'
 import type { HideKey, HttpsStatus, Incident, StatusPage, Theme } from '../lib/types'
 import { Alert, Badge, Card, CopyButton, Field, IconButton, Input, Segmented, Select, Skeleton, Spinner, Switch, Textarea, Button, confirm, toast } from '../components/ui'
 import { ThemeSwatch, domainURL, pageURL, slugify, themeMeta } from './StatusPages'
-import { TypeIcon } from '../components/meta'
-import { Flag } from '../components/flag'
-import { monitorCountry } from './Dashboard'
+import { MonitorsTab } from './StatusMonitorsTab'
 
 type Tab = 'general' | 'appearance' | 'monitors' | 'incidents'
 
@@ -306,8 +304,6 @@ export default function StatusPageEditor() {
     return () => clearTimeout(h)
   }, [p])
 
-  const used = useMemo(() => new Set(p?.groups.flatMap((g) => g.monitors.map((m) => m.monitorId)) ?? []), [p])
-  const sortedMonitors = useMemo(() => Object.values(monitors).sort((a, b) => a.name.localeCompare(b.name)), [monitors])
 
   if (!p) return <div className="p-8">{err ? <Alert tone="danger">{err}</Alert> : <Skeleton className="h-96" />}</div>
 
@@ -347,23 +343,6 @@ export default function StatusPageEditor() {
     } catch (e) {
       toast.error(t('Could not change'), (e as Error).message)
     }
-  }
-
-  const move = <T,>(arr: T[], i: number, d: number) => {
-    const a = [...arr]
-    const j = i + d
-    if (j < 0 || j >= a.length) return a
-    ;[a[i], a[j]] = [a[j], a[i]]
-    return a
-  }
-
-  const addAll = (filter: (m: (typeof sortedMonitors)[number]) => boolean, name: string) => {
-    const list = sortedMonitors.filter((m) => filter(m) && !used.has(m.id))
-    if (!list.length) return toast.info(t('They are all on this page already'))
-    const group = { name, monitors: list.map((m) => ({ monitorId: m.id, showUrl: false })) }
-    // A new page starts with one empty, unnamed group: fill that one.
-    const blank = p.groups.findIndex((g) => !g.name.trim() && g.monitors.length === 0)
-    setGroups(blank >= 0 ? p.groups.map((g, i) => (i === blank ? group : g)) : [...p.groups, group])
   }
 
   const previewSrc = `/status/${savedSlug}?preview=1`
@@ -459,51 +438,7 @@ export default function StatusPageEditor() {
               </>
             )}
 
-            {tab === 'monitors' && (
-              <>
-                {p.groups.map((g, gi) => (
-                  <div key={gi} className="rounded-2xl border border-line bg-surface-2/40">
-                    <div className="flex items-center gap-2 p-3 border-b border-line">
-                      <Input aria-label={t('Group name')} dir="auto" value={g.name} placeholder={t('Group name (optional)')} onChange={(e) => setGroups(p.groups.map((x, i) => (i === gi ? { ...x, name: e.target.value } : x)))} className="h-9 font-medium" />
-                      <IconButton size="sm" label={t('Move group up')} disabled={gi === 0} onClick={() => setGroups(move(p.groups, gi, -1))}><ArrowUp className="size-4" /></IconButton>
-                      <IconButton size="sm" label={t('Move group down')} disabled={gi === p.groups.length - 1} onClick={() => setGroups(move(p.groups, gi, 1))}><ArrowDown className="size-4" /></IconButton>
-                      <IconButton size="sm" label={t('Remove group')} onClick={() => setGroups(p.groups.filter((_, i) => i !== gi))}><Trash2 className="size-4" /></IconButton>
-                    </div>
-                    <div className="p-2 space-y-1">
-                      {g.monitors.length === 0 && <p className="px-2 py-3 text-[13px] text-muted">{t('Empty group — add monitors below.')}</p>}
-                      {g.monitors.map((gm, mi) => {
-                        const m = monitors[gm.monitorId]
-                        const cc = m ? monitorCountry(m) : ''
-                        return (
-                          <div key={gm.monitorId} className="flex items-center gap-2 rounded-xl px-2 py-1.5 hover:bg-surface-2">
-                            {cc ? <Flag cc={cc} size={16} /> : m && <TypeIcon type={m.type} className="size-3.5 text-subtle" />}
-                            <span className="min-w-0 me-auto truncate text-sm" dir="auto">{m?.name ?? t('#{id} (deleted)', { id: gm.monitorId })}</span>
-                            <IconButton size="sm" label={gm.showUrl ? t('Hide address') : t('Show address')} onClick={() => setGroups(p.groups.map((x, i) => (i === gi ? { ...x, monitors: x.monitors.map((y, j) => (j === mi ? { ...y, showUrl: !y.showUrl } : y)) } : x)))} className={gm.showUrl ? 'text-accent-ink' : ''}>
-                              {gm.showUrl ? <Eye className="size-4" /> : <EyeOff className="size-4" />}
-                            </IconButton>
-                            <IconButton size="sm" label={t('Move up')} disabled={mi === 0} onClick={() => setGroups(p.groups.map((x, i) => (i === gi ? { ...x, monitors: move(x.monitors, mi, -1) } : x)))}><ArrowUp className="size-4" /></IconButton>
-                            <IconButton size="sm" label={t('Move down')} disabled={mi === g.monitors.length - 1} onClick={() => setGroups(p.groups.map((x, i) => (i === gi ? { ...x, monitors: move(x.monitors, mi, 1) } : x)))}><ArrowDown className="size-4" /></IconButton>
-                            <IconButton size="sm" label={t('Remove from page')} onClick={() => setGroups(p.groups.map((x, i) => (i === gi ? { ...x, monitors: x.monitors.filter((_, j) => j !== mi) } : x)))}><X className="size-4" /></IconButton>
-                          </div>
-                        )
-                      })}
-                      <Select aria-label={t('Add a monitor to this group')} value="" onChange={(e) => {
-                        const mid = Number(e.target.value)
-                        if (mid) setGroups(p.groups.map((x, i) => (i === gi ? { ...x, monitors: [...x.monitors, { monitorId: mid, showUrl: false }] } : x)))
-                      }}>
-                        <option value="">{t('+ Add a monitor…')}</option>
-                        {sortedMonitors.filter((m) => !used.has(m.id)).map((m) => <option key={m.id} value={m.id}>{m.name}</option>)}
-                      </Select>
-                    </div>
-                  </div>
-                ))}
-                <div className="flex flex-wrap gap-2">
-                  <Button size="sm" icon={<Plus className="size-3.5" />} onClick={() => setGroups([...p.groups, { name: '', monitors: [] }])}>{t('Add group')}</Button>
-                  <Button size="sm" variant="soft" icon={<Cable className="size-3.5" />} onClick={() => addAll((m) => m.type === 'backpack-tunnel' || m.type === 'agent-tunnel', t('Tunnels'))}>{t('Add all tunnels')}</Button>
-                  <Button size="sm" variant="soft" icon={<Server className="size-3.5" />} onClick={() => addAll((m) => m.type === 'agent', t('Servers'))}>{t('Add all servers')}</Button>
-                </div>
-              </>
-            )}
+            {tab === 'monitors' && <MonitorsTab groups={p.groups} setGroups={setGroups} monitors={monitors} />}
 
             {tab === 'incidents' && <IncidentsTab pageId={p.id} />}
           </div>

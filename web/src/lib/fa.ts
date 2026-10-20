@@ -1387,4 +1387,10 @@ export const fa: Record<string, string> = {
   // tunnel display names (NeoTunnel 0.8.3)
   'In {program}: {name}': 'در {program}: {name}',
   'Other end: {name}': 'سمت دیگر: {name}',
+  // status page editor: kinds and drag to reorder
+  'Other monitors': 'مانیتورهای دیگر',
+  'Add all configs': 'افزودن همهٔ کانفیگ‌ها',
+  'Drag to reorder': 'برای جابه‌جایی بکشید',
+  'Drop here': 'اینجا رها کنید',
+  'Drag a row by its handle to change the order, also into another group.': 'برای تغییر ترتیب، هر ردیف را از دستگیره‌اش بکشید؛ به گروه دیگر هم می‌شود برد.',
 }
