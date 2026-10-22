@@ -336,6 +336,8 @@ export interface StatusPage {
   domain: string
   barDays: number
   hide: HideKey[]
+  /** The internet radar strip (Chabokan's radar, read by the panel). */
+  radar: { show: boolean; datacenters: string[] }
   createdAt: number
   updatedAt: number
   groups: StatusPageGroup[]
@@ -520,4 +522,29 @@ export interface StatusApiKey {
   createdAt: number
   lastUsed: number
   active: boolean
+}
+
+/** One of the internet radar's datacenters, as the panel sums it up. */
+export interface RadarDC {
+  slug: string
+  name: string
+  location: string
+  /** In Iran: its state is about foreign services; abroad, about Iranian ones. */
+  internal: boolean
+  state: 'ok' | 'partial' | 'down' | 'unknown'
+  up: number
+  total: number
+  latency: number
+  down?: string[]
+  /** Share of checks that passed in each 5 minutes of the last hour; -1 = no data. */
+  history: number[]
+  at: number
+}
+
+export interface RadarSnapshot {
+  at: number
+  source: string
+  link: string
+  datacenters: RadarDC[]
+  error?: string
 }

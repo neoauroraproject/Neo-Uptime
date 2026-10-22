@@ -290,7 +290,7 @@ export default function Pulse({ d, layout, now, left }: { d: PubData; layout: 'l
         {page.showLatency && <ResponsePanel all={all} />}
       </div>
 
-      {(d.maintenance.length > 0 || d.incidents.length > 0) && <div className="space-y-3"><Notices d={d} rounded="rounded-[22px]" /></div>}
+      {(d.maintenance.length > 0 || d.incidents.length > 0 || d.radar) && <div className="space-y-3"><Notices d={d} rounded="rounded-[22px]" /></div>}
 
       {d.groups.length === 0 && <p className="py-16 text-center text-muted">{t('Nothing is published on this page yet.')}</p>}
 

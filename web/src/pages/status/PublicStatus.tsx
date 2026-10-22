@@ -4,12 +4,13 @@ import { ArrowDown, ArrowUp, ChevronDown, CircleAlert, CircleCheck, CircleX, Inf
 import { api, ApiError } from '../../lib/api'
 import { bytes, clsx, fmtDateTime, fmtWeekdayTime, ms, n, pct, statusKey, timeAgo } from '../../lib/format'
 import { useLang, useT, type Lang } from '../../lib/i18n'
-import type { ChartPoint, HideKey, Theme } from '../../lib/types'
+import type { ChartPoint, HideKey, Theme, RadarSnapshot } from '../../lib/types'
 import { AreaChart, Columns, DayBars, HeartbeatBar, Sparkline, type DayBucket } from '../../components/charts'
 import { TunnelBadges } from '../../components/tunnel'
 import { Spinner, TagChip, useNow } from '../../components/ui'
 import { Flag } from '../../components/flag'
 import Pulse from './Pulse'
+import { RadarStrip } from '../../components/radar'
 
 export interface PubBeat { s: 0 | 1 | 2 | 3; t: number; p?: number }
 // Hidden details are missing, not empty.
@@ -33,6 +34,8 @@ export interface PubData {
   incidents: { id: number; title: string; content: string; style: string; createdAt: number; updatedAt: number }[]
   maintenance: { title: string; description: string; status: string; start?: number; end?: number }[]
   updatedAt: number
+  /** The internet radar, when the page shows it (summed up by the panel). */
+  radar?: RadarSnapshot
 }
 
 export const overallKey = {
@@ -140,6 +143,7 @@ export function Notices({ d, rounded = 'rounded-2xl' }: { d: PubData; rounded?: 
   const t = useT()
   return (
     <>
+      {d.radar && <RadarStrip r={d.radar} rounded={rounded} />}
       {d.maintenance.map((m, i) => (
         <section key={`m${i}`} className={clsx('border px-5 py-4 bg-surface', rounded)} style={{ borderColor: 'color-mix(in srgb, var(--maint) 40%, transparent)' }}>
           <div className="flex items-center gap-2 font-semibold" style={{ color: 'var(--maint)' }}>
@@ -246,7 +250,7 @@ function Zen({ d, now, left }: { d: PubData; now: number; left: number }) {
         </section>
       )}
 
-      {(d.maintenance.length > 0 || d.incidents.length > 0) && <div className="space-y-3"><Notices d={d} rounded="rounded-[20px]" /></div>}
+      {(d.maintenance.length > 0 || d.incidents.length > 0 || d.radar) && <div className="space-y-3"><Notices d={d} rounded="rounded-[20px]" /></div>}
 
       {d.groups.length === 0 && <p className="py-16 text-center text-muted">{t('Nothing is published on this page yet.')}</p>}
 

@@ -9,6 +9,7 @@ import type { HideKey, HttpsStatus, Incident, StatusPage, Theme } from '../lib/t
 import { Alert, Badge, Card, CopyButton, Field, IconButton, Input, Segmented, Select, Skeleton, Spinner, Switch, Textarea, Button, confirm, toast } from '../components/ui'
 import { ThemeSwatch, domainURL, pageURL, slugify, themeMeta } from './StatusPages'
 import { MonitorsTab } from './StatusMonitorsTab'
+import { StatusRadarField } from './StatusRadarField'
 
 type Tab = 'general' | 'appearance' | 'monitors' | 'incidents'
 
@@ -439,6 +440,7 @@ export default function StatusPageEditor() {
             )}
 
             {tab === 'monitors' && <MonitorsTab groups={p.groups} setGroups={setGroups} monitors={monitors} />}
+            {tab === 'monitors' && <StatusRadarField value={p.radar} onChange={(radar) => up({ radar })} />}
 
             {tab === 'incidents' && <IncidentsTab pageId={p.id} />}
           </div>

@@ -373,6 +373,10 @@ CREATE TABLE subscriptions (
   updated_at INTEGER NOT NULL
 );
 `,
+	// v6 — a status page's internet radar strip (JSON).
+	`
+ALTER TABLE status_pages ADD COLUMN radar TEXT NOT NULL DEFAULT '';
+`,
 }
 
 func (db *DB) migrate(ctx context.Context) error {

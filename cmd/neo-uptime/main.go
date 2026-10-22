@@ -158,6 +158,7 @@ func serve(host string, port int, dataDir, certFile, keyFile string) {
 	app := api.New(db, mgr, bp, agents, hub, web.FS(), dataDir)
 	app.SetPanelPort(port)
 	app.StartAds(ctx)
+	app.StartRadar(ctx)
 	addr := net.JoinHostPort(host, strconv.Itoa(port))
 	// Automatic HTTPS for the panel's and status pages' own domains. It stays
 	// off until it is turned on under Settings → Domains & HTTPS.

@@ -216,9 +216,18 @@ type StatusPage struct {
 	Domain          string            `json:"domain"`  // own host name, e.g. status.example.com
 	BarDays         int               `json:"barDays"` // days shown when BarMode is "days"
 	Hide            []string          `json:"hide"`    // details visitors do not see, e.g. "port"
+	Radar           StatusRadar       `json:"radar"`   // the internet radar strip
 	CreatedAt       int64             `json:"createdAt"`
 	UpdatedAt       int64             `json:"updatedAt"`
 	Groups          []StatusPageGroup `json:"groups"`
+}
+
+// StatusRadar is a status page's internet radar strip (Chabokan's radar,
+// read by the panel): whether it shows, and which datacenters (by slug;
+// none means every one).
+type StatusRadar struct {
+	Show        bool     `json:"show"`
+	Datacenters []string `json:"datacenters"`
 }
 
 // Hidden reports whether the page leaves out a detail, such as "port".

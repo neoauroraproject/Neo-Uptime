@@ -194,3 +194,12 @@ The backend is Go with SQLite through a pure-Go driver (no CGO) and Xray-core bu
 
 ---
 News and help: [t.me/neoaurora](https://t.me/neoaurora) · Support the project: USDT (BEP20) `0xacA935a5955a756BedaE4738304274EdeE0223D5`
+
+
+## Internet radar on status pages
+
+Settings → General → *Internet radar* turns on reading [Chabokan's radar](https://radar.chabokan.net/): from datacenters in Iran (Asiatech, Hiweb, Sefroyek, Irancell, Amin, Shatel) and abroad (Hetzner, OVH), it checks about 30 well-known services every minute. The panel reads it every 5 minutes (about 100 KB, gzipped) and keeps only a summary per datacenter in memory: its state, how many services answer, the latency, and the last hour in twelve 5-minute steps. Nothing is written to the database, and with the switch off nothing is read or kept.
+
+From a datacenter in Iran, the state is about foreign services (does it have the international internet?); from abroad, about Iranian ones. A service is down only after two failed checks in a row, and a service no datacenter reached all hour (WhatsApp, which is filtered) does not count. 80 % of the services answering is *normal*, 30 % *disrupted*, less *cut off*.
+
+A status page shows it under Monitors → *Internet radar*: a small strip in the page's theme that says in one line whether there is a disruption, and opens to each datacenter. It comes with the page's own data, so visitors never wait on the radar or talk to it. The data is Chabokan's; the strip links to it. `NEO_UPTIME_RADAR_URL` points the reader elsewhere.

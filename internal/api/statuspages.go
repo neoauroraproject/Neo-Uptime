@@ -183,6 +183,15 @@ func normPage(p *store.StatusPage) error {
 		}
 	}
 	p.Hide = hide
+	// Radar datacenters are slugs such as "asiatech-tehran".
+	dcs := []string{}
+	for _, v := range p.Radar.Datacenters {
+		v = strings.TrimSpace(v)
+		if v != "" && len(v) <= 64 && len(dcs) < 50 && !slices.Contains(dcs, v) {
+			dcs = append(dcs, v)
+		}
+	}
+	p.Radar.Datacenters = dcs
 	if p.Groups == nil {
 		p.Groups = []store.StatusPageGroup{}
 	}
@@ -580,10 +589,18 @@ func (s *Server) publicPage(ctx context.Context, p *store.StatusPage) map[string
 		"showLatency": p.ShowLatency, "showBanner": p.ShowBanner, "barDays": p.BarDays, "domain": p.Domain,
 		"hide": p.Hide,
 	}
-	return map[string]any{
+	out := map[string]any{
 		"page": page, "groups": groups, "overall": overall, "incidents": incidents,
 		"maintenance": maint, "updatedAt": now.UnixMilli(),
 	}
+	// The radar strip comes from the summary in memory: no extra request,
+	// no waiting on the radar.
+	if p.Radar.Show && s.radar != nil {
+		if snap := s.radar.Snapshot().Pick(p.Radar.Datacenters); snap != nil {
+			out["radar"] = snap
+		}
+	}
+	return out
 }
 
 func (s *Server) handlePublicChart(w http.ResponseWriter, r *http.Request) {

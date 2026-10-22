@@ -566,6 +566,8 @@ var settingDefaults = map[string]string{
 	// The slow alert tunnels get when they are imported (0 = none).
 	"tunnelLatencyAlertMs":  "0",
 	"tunnelLatencyAlertFor": "120",
+	// Chabokan's internet radar on status pages (read every few minutes).
+	"radarEnabled": "false",
 }
 
 func (s *Server) settings(ctx context.Context) map[string]string {
@@ -631,7 +633,7 @@ func (s *Server) handlePutSettings(w http.ResponseWriter, r *http.Request) {
 			if v == "" {
 				v = "Neo Uptime"
 			}
-		case "httpsEnabled":
+		case "httpsEnabled", "radarEnabled":
 			if v != "true" {
 				v = "false"
 			}
@@ -658,6 +660,12 @@ func (s *Server) handlePutSettings(w http.ResponseWriter, r *http.Request) {
 	if err := s.db.SetSettings(r.Context(), clean); err != nil {
 		writeStoreErr(w, err)
 		return
+	}
+	if v, ok := clean["radarEnabled"]; ok && v != before["radarEnabled"] && s.radar != nil {
+		s.radar.Kick()
+		pageCache.mu.Lock()
+		pageCache.m = map[string]cachedPage{}
+		pageCache.mu.Unlock()
 	}
 	for _, k := range []string{"httpsEnabled", "acmeEmail", "panelDomain"} {
 		if v, ok := clean[k]; ok && v != before[k] {

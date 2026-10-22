@@ -5,7 +5,8 @@ import { useApp } from '../../lib/store'
 import { useAdminTheme, type AdminTheme } from '../../lib/theme'
 import { bytes, clsx } from '../../lib/format'
 import { useLang, useT, type Lang } from '../../lib/i18n'
-import type { StatusPage } from '../../lib/types'
+import type { RadarSnapshot, StatusPage } from '../../lib/types'
+import { RadarStrip } from '../../components/radar'
 import { Alert, Button, Card, CardHeader, Field, Input, Select, Skeleton, Switch, confirm, toast } from '../../components/ui'
 
 type S = Record<string, string>
@@ -46,6 +47,7 @@ export function General() {
   if (!s) return <Skeleton className="h-96 rounded-[18px]" />
   const set = (k: string, v: string) => setS({ ...s, [k]: v })
   return (
+    <div className="space-y-6">
     <Card>
       <CardHeader title={t('General')} subtitle={t('How this instance names itself and builds links.')} />
       <div className="px-5 pb-5 space-y-5">
@@ -71,6 +73,39 @@ export function General() {
         <Switch checked={s.trustProxy === 'true'} onChange={(v) => set('trustProxy', String(v))} label={t('Behind a reverse proxy')} description={t('Trust X-Forwarded-For / CF-Connecting-IP for client addresses and HTTPS detection (nginx, Caddy, Cloudflare).')} />
         <Switch checked={s.searchEngineIndex === 'true'} onChange={(v) => set('searchEngineIndex', String(v))} label={t('Let search engines index status pages')} />
         <div className="flex justify-end"><Button variant="primary" loading={busy} icon={<Save className="size-4" />} onClick={() => save({ siteTitle: s.siteTitle, primaryBaseURL: s.primaryBaseURL, timezone: s.timezone, entryPage: s.entryPage, trustProxy: s.trustProxy, searchEngineIndex: s.searchEngineIndex })}>{t('Save')}</Button></div>
+      </div>
+    </Card>
+    <RadarCard />
+    </div>
+  )
+}
+
+/** Chabokan's internet radar: on or off for the whole panel, with a look. */
+function RadarCard() {
+  const t = useT()
+  const { s, save, busy } = useSettings()
+  const [info, setInfo] = useState<{ enabled: boolean; every: number; snapshot: RadarSnapshot | null } | null>(null)
+  const load = () => api.get<{ enabled: boolean; every: number; snapshot: RadarSnapshot | null }>('/api/radar').then(setInfo).catch(() => {})
+  useEffect(() => { load() }, [])
+  if (!s) return null
+  const on = s.radarEnabled === 'true'
+  const toggle = async (v: boolean) => {
+    await save({ radarEnabled: String(v) })
+    // The first reading takes a few seconds.
+    setTimeout(load, 2500)
+    setTimeout(load, 8000)
+  }
+  const snap = info?.snapshot
+  return (
+    <Card>
+      <CardHeader title={t('Internet radar')} subtitle={t('Whether Iran’s datacenters reach the international internet, from Chabokan’s radar. Status pages can show it as a small strip.')} />
+      <div className="p-5 space-y-4">
+        <Switch checked={on} disabled={busy} onChange={toggle} label={t('Read the internet radar')}
+          description={t('The panel reads radar.chabokan.net every {n} minutes (about 100 KB) and keeps only a small summary in memory; visitors get it with the page. Off: nothing is read or kept.', { n: Math.round((info?.every ?? 300) / 60) })} />
+        {on && !snap && <p className="text-[13px] text-muted">{t('Reading the radar…')}</p>}
+        {on && snap?.error && <Alert tone="warning">{t('The last reading failed: {why}', { why: snap.error })}</Alert>}
+        {on && snap && <RadarStrip r={snap} />}
+        {on && snap && <p className="text-[12.5px] text-muted">{t('Add it to a status page under Status pages → Monitors → Internet radar.')}</p>}
       </div>
     </Card>
   )

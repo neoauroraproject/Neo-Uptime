@@ -10,20 +10,26 @@ import (
 
 const statusPageCols = `id, slug, title, description, theme, layout, bar_mode, accent_color, logo, footer,
   custom_css, show_tags, show_cert_expiry, show_powered_by, show_charts, published, refresh_interval,
-  created_at, updated_at, language, show_uptime, show_latency, show_banner, domain, bar_days, hide`
+  created_at, updated_at, language, show_uptime, show_latency, show_banner, domain, bar_days, hide, radar`
 
 func scanStatusPage(s scanner) (*StatusPage, error) {
 	var p StatusPage
 	var tags, cert, powered, charts, pub, upt, lat, ban int
-	var hide string
+	var hide, radar string
 	if err := s.Scan(&p.ID, &p.Slug, &p.Title, &p.Description, &p.Theme, &p.Layout, &p.BarMode, &p.AccentColor,
 		&p.Logo, &p.Footer, &p.CustomCSS, &tags, &cert, &powered, &charts, &pub, &p.RefreshInterval,
-		&p.CreatedAt, &p.UpdatedAt, &p.Language, &upt, &lat, &ban, &p.Domain, &p.BarDays, &hide); err != nil {
+		&p.CreatedAt, &p.UpdatedAt, &p.Language, &upt, &lat, &ban, &p.Domain, &p.BarDays, &hide, &radar); err != nil {
 		return nil, err
 	}
 	p.Hide = []string{}
 	if hide != "" {
 		p.Hide = strings.Split(hide, ",")
+	}
+	if radar != "" {
+		_ = json.Unmarshal([]byte(radar), &p.Radar)
+	}
+	if p.Radar.Datacenters == nil {
+		p.Radar.Datacenters = []string{}
 	}
 	p.ShowUptime, p.ShowLatency, p.ShowBanner = upt == 1, lat == 1, ban == 1
 	p.ShowTags, p.ShowCertExpiry, p.ShowPoweredBy, p.ShowCharts, p.Published = tags == 1, cert == 1, powered == 1, charts == 1, pub == 1
@@ -130,12 +136,12 @@ func (db *DB) SaveStatusPage(ctx context.Context, p *StatusPage) error {
 			p.CreatedAt = t
 			res, err := tx.ExecContext(ctx, `INSERT INTO status_pages (slug, title, description, theme, layout, bar_mode,
 				accent_color, logo, footer, custom_css, show_tags, show_cert_expiry, show_powered_by, show_charts,
-				published, refresh_interval, created_at, updated_at, language, show_uptime, show_latency, show_banner, domain, bar_days, hide)
-				VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+				published, refresh_interval, created_at, updated_at, language, show_uptime, show_latency, show_banner, domain, bar_days, hide, radar)
+				VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
 				p.Slug, p.Title, p.Description, p.Theme, p.Layout, p.BarMode, p.AccentColor, p.Logo, p.Footer, p.CustomCSS,
 				b2i(p.ShowTags), b2i(p.ShowCertExpiry), b2i(p.ShowPoweredBy), b2i(p.ShowCharts), b2i(p.Published),
 				p.RefreshInterval, t, t, p.Language, b2i(p.ShowUptime), b2i(p.ShowLatency), b2i(p.ShowBanner), p.Domain, p.BarDays,
-				strings.Join(p.Hide, ","))
+				strings.Join(p.Hide, ","), radarJSON(p.Radar))
 			if err != nil {
 				return err
 			}
@@ -144,11 +150,11 @@ func (db *DB) SaveStatusPage(ctx context.Context, p *StatusPage) error {
 			_, err := tx.ExecContext(ctx, `UPDATE status_pages SET slug=?, title=?, description=?, theme=?, layout=?,
 				bar_mode=?, accent_color=?, logo=?, footer=?, custom_css=?, show_tags=?, show_cert_expiry=?,
 				show_powered_by=?, show_charts=?, published=?, refresh_interval=?, updated_at=?, language=?,
-				show_uptime=?, show_latency=?, show_banner=?, domain=?, bar_days=?, hide=? WHERE id=?`,
+				show_uptime=?, show_latency=?, show_banner=?, domain=?, bar_days=?, hide=?, radar=? WHERE id=?`,
 				p.Slug, p.Title, p.Description, p.Theme, p.Layout, p.BarMode, p.AccentColor, p.Logo, p.Footer, p.CustomCSS,
 				b2i(p.ShowTags), b2i(p.ShowCertExpiry), b2i(p.ShowPoweredBy), b2i(p.ShowCharts), b2i(p.Published),
 				p.RefreshInterval, t, p.Language, b2i(p.ShowUptime), b2i(p.ShowLatency), b2i(p.ShowBanner), p.Domain, p.BarDays,
-				strings.Join(p.Hide, ","), p.ID)
+				strings.Join(p.Hide, ","), radarJSON(p.Radar), p.ID)
 			if err != nil {
 				return err
 			}
@@ -380,4 +386,12 @@ func (db *DB) SetMaintenanceActive(ctx context.Context, id int64, active bool) e
 func (db *DB) DeleteMaintenance(ctx context.Context, id int64) error {
 	_, err := db.w.ExecContext(ctx, `DELETE FROM maintenances WHERE id=?`, id)
 	return err
+}
+
+func radarJSON(r StatusRadar) string {
+	if !r.Show && len(r.Datacenters) == 0 {
+		return ""
+	}
+	b, _ := json.Marshal(r)
+	return string(b)
 }

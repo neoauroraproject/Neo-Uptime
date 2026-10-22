@@ -23,6 +23,8 @@ type harness struct {
 	t      *testing.T
 	srv    *httptest.Server
 	client *http.Client
+	app    *Server
+	ctx    context.Context
 }
 
 func newHarness(t *testing.T) *harness {
@@ -42,10 +44,11 @@ func newHarness(t *testing.T) *harness {
 		t.Fatal(err)
 	}
 	static := fstest.MapFS{"index.html": {Data: []byte("<!doctype html><title>app</title>")}}
-	srv := httptest.NewServer(New(db, mgr, bp, agents, hub, static, t.TempDir()))
+	app := New(db, mgr, bp, agents, hub, static, t.TempDir())
+	srv := httptest.NewServer(app)
 	t.Cleanup(srv.Close)
 	jar, _ := cookiejar.New(nil)
-	return &harness{t: t, srv: srv, client: &http.Client{Jar: jar, Timeout: 10 * time.Second}}
+	return &harness{t: t, srv: srv, client: &http.Client{Jar: jar, Timeout: 10 * time.Second}, app: app, ctx: ctx}
 }
 
 func (h *harness) do(method, path, body string, csrf bool) (int, map[string]any) {

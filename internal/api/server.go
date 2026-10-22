@@ -22,6 +22,7 @@ import (
 	"github.com/neoauroraproject/Neo-Uptime/internal/backpack"
 	"github.com/neoauroraproject/Neo-Uptime/internal/certs"
 	"github.com/neoauroraproject/Neo-Uptime/internal/monitor"
+	"github.com/neoauroraproject/Neo-Uptime/internal/radar"
 	"github.com/neoauroraproject/Neo-Uptime/internal/store"
 )
 
@@ -43,8 +44,9 @@ type Server struct {
 	certs        *certs.Manager // nil until EnableHTTPS
 	port         int            // the panel's own port, for agent addresses
 	adsMu        sync.Mutex
-	ads          *ads.Service // nil until StartAds
-	binMu        sync.Mutex   // agent binaries being downloaded for updates
+	ads          *ads.Service   // nil until StartAds
+	radar        *radar.Service // nil until StartRadar
+	binMu        sync.Mutex     // agent binaries being downloaded for updates
 }
 
 // SetPanelPort records the port the panel listens on.
@@ -110,6 +112,7 @@ func (s *Server) routes() {
 	m.HandleFunc("GET /api/agents/{id}", s.need(roleViewer, s.handleGetAgent))
 	m.HandleFunc("GET /api/subscriptions", s.need(roleViewer, s.handleListSubscriptions))
 	m.HandleFunc("GET /api/ads", s.need(roleViewer, s.handleAds))
+	m.HandleFunc("GET /api/radar", s.need(roleViewer, s.handleRadar))
 
 	// own account — any signed-in browser user
 	m.HandleFunc("PUT /api/me/password", s.session(s.handleChangePassword))
