@@ -144,30 +144,71 @@ bash <(curl -fsSL https://raw.githubusercontent.com/neoauroraproject/Neo-Uptime/
 
 ---
 
-## 💖 Donation (حمایت مالی)
-
-<div dir="rtl">
-
-اگر Neo Uptime برایتان مفید بوده و دوست دارید توسعه‌اش ادامه پیدا کند، می‌توانید از این راه حمایت کنید:
-
-</div>
-
-If you find this project helpful and want to support its development, you can donate via:
-
-* **USDT (BEP20):**
-  `0xacA935a5955a756BedaE4738304274EdeE0223D5`
-
-## 🧩 Other Neo Aurora projects (پروژه‌های دیگر)
-
-| | |
-|---|---|
-| [HMPanel](https://github.com/neoauroraproject/hmpanel) | HMray Panel — پنل مدیریت فروش VPN |
-| [NeoTunnel](https://github.com/neoauroraproject/neotunnel) | تانل‌های کرنلی سریع (6to4، GRE، VXLAN، WireGuard …) با پنل فارسی |
-| [3xFactor](https://github.com/neoauroraproject/3xfactor) | ضریب ترافیک برای 3x-ui با پنل اختصاصی |
-| [NeoConfig](https://github.com/neoauroraproject/NeoConfig) | اپ اشتراک VPN وایت‌لیبل برای ثنایی، پاسارگارد و HMPanel |
-| [NeoTemplate](https://github.com/neoauroraproject/NeoTemplate) | قالب‌های صفحه‌ی اشتراک برای 3x-ui |
+<div align="center">
 
 ---
-Telegram Channels: [NeoAurora](https://t.me/neoaurora) / [HMPanel](https://t.me/hmpanel)
 
-*Built with ❤️ by Neo Aurora.*
+### 🌌 NEO AURORA
+
+<p>
+  <a href="https://t.me/neoaurora">Telegram</a> &nbsp;·&nbsp;
+  <a href="https://t.me/hmraysupport">Support</a> &nbsp;·&nbsp;
+  <a href="https://t.me/neolicensebot">License Bot</a> &nbsp;·&nbsp;
+  <a href="https://github.com/neoauroraproject">GitHub</a>
+</p>
+
+<p>
+  <a href="https://t.me/hmpanel">HMPanel Community</a>
+  &nbsp;·&nbsp;
+  <a href="https://t.me/neotunnels">NeoTunnel Community</a>
+  &nbsp;·&nbsp;
+  <a href="https://github.com/neoauroraproject?tab=repositories">All Projects</a>
+</p>
+
+<br>
+
+### 💖 Support Our Development
+
+<p>
+  Your support helps us maintain and improve our open-source projects.
+</p>
+
+<p>
+  <a href="https://bscscan.com/address/0x94efb6642b8fcc591c28a8c04db2279908f66e18">
+    <img src="https://img.shields.io/badge/USDT-BEP20-26A17B?style=for-the-badge&logo=tether&logoColor=white" alt="USDT BEP20"/>
+  </a>
+  <br>
+  <code>0x94efb6642b8fcc591c28a8c04db2279908f66e18</code>
+</p>
+
+<p>
+  <a href="https://tonscan.org/address/UQD6NpICg2Q7nF_yFRrKW2_ZgB5LPI1X2KDK0JDjlivwhCJ5">
+    <img src="https://img.shields.io/badge/TON-Network-0098EA?style=for-the-badge&logo=ton&logoColor=white" alt="TON"/>
+  </a>
+  <br>
+  <code>UQD6NpICg2Q7nF_yFRrKW2_ZgB5LPI1X2KDK0JDjlivwhCJ5</code>
+</p>
+
+<p>
+  <a href="https://tronscan.org/#/address/TJsBskCPtbVk6gKxTkcocjJX2qNa62Mo1X">
+    <img src="https://img.shields.io/badge/TRON-Network-FF0000?style=for-the-badge&logo=tron&logoColor=white" alt="TRON"/>
+  </a>
+  <br>
+  <code>TJsBskCPtbVk6gKxTkcocjJX2qNa62Mo1X</code>
+</p>
+
+<br>
+
+⭐ **Enjoying this project? Give it a star!**
+
+<p>
+  Every star helps us grow and reach more developers.
+</p>
+
+**Crafted with ❤️ by the NeoAurora Team**
+
+<sub>Open Source · Built with Passion</sub>
+
+---
+
+</div>
