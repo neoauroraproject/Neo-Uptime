@@ -359,9 +359,19 @@ type cachedPage struct {
 type pageCacheT struct {
 	mu sync.Mutex
 	m  map[string]cachedPage
+	// building holds one lock per page, so visitors who arrive together
+	// wait for one build instead of each running the same queries.
+	building sync.Map
 }
 
 var pageCache = &pageCacheT{m: map[string]cachedPage{}}
+
+func (c *pageCacheT) lock(slug string) func() {
+	v, _ := c.building.LoadOrStore(slug, &sync.Mutex{})
+	mu := v.(*sync.Mutex)
+	mu.Lock()
+	return mu.Unlock
+}
 
 func (c *pageCacheT) get(slug string) ([]byte, bool) {
 	c.mu.Lock()
@@ -400,6 +410,15 @@ func (s *Server) handlePublicStatusPage(w http.ResponseWriter, r *http.Request) 
 	if !p.Published {
 		if who, err := s.identify(r); err != nil || who.Kind != "session" {
 			writeErr(w, http.StatusNotFound, "status page not found")
+			return
+		}
+	}
+	if p.Published {
+		// Only real pages get a lock, so made-up slugs cannot pile them up.
+		unlock := pageCache.lock(slug)
+		defer unlock()
+		if body, ok := pageCache.get(slug); ok {
+			writePublicJSON(w, body)
 			return
 		}
 	}

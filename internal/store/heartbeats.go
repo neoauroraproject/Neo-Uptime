@@ -119,32 +119,81 @@ func (db *DB) LastImportant(ctx context.Context, monitorID int64) (*Heartbeat, e
 
 // RecentHeartbeats returns the last n heartbeats of every monitor in ids (or
 // of every monitor when ids is empty), oldest first within each monitor.
+//
+// Each monitor is read on its own through the (monitor_id, time) index, so
+// the cost is n rows per monitor however long the history is. A single
+// window query over the whole table, as before v1.6.1, read every heartbeat
+// ever kept and made status pages crawl after a few weeks.
 func (db *DB) RecentHeartbeats(ctx context.Context, ids []int64, n int) (map[int64][]*Heartbeat, error) {
-	where := ""
-	args := []any{}
-	if len(ids) > 0 {
-		where = "WHERE monitor_id IN (" + placeholders(len(ids)) + ")"
-		for _, id := range ids {
-			args = append(args, id)
+	if len(ids) == 0 {
+		var err error
+		if ids, err = db.monitorIDs(ctx); err != nil {
+			return nil, err
 		}
 	}
-	args = append(args, n)
-	rows, err := db.r.QueryContext(ctx, `SELECT `+hbCols+` FROM (
-		SELECT `+hbCols+`, ROW_NUMBER() OVER (PARTITION BY monitor_id ORDER BY time DESC) AS rn
-		FROM heartbeats `+where+`) WHERE rn <= ? ORDER BY monitor_id, time`, args...)
+	out := map[int64][]*Heartbeat{}
+	if len(ids) == 0 || n <= 0 {
+		return out, nil
+	}
+	conn, err := db.r.Conn(ctx)
+	if err != nil {
+		return nil, err
+	}
+	defer conn.Close()
+	stmt, err := conn.PrepareContext(ctx, `SELECT `+hbCols+` FROM heartbeats
+		WHERE monitor_id = ? ORDER BY time DESC LIMIT ?`)
+	if err != nil {
+		return nil, err
+	}
+	defer stmt.Close()
+	for _, id := range ids {
+		if _, done := out[id]; done {
+			continue
+		}
+		rows, err := stmt.QueryContext(ctx, id, n)
+		if err != nil {
+			return nil, err
+		}
+		var list []*Heartbeat
+		for rows.Next() {
+			h, err := scanHeartbeat(rows)
+			if err != nil {
+				rows.Close()
+				return nil, err
+			}
+			list = append(list, h)
+		}
+		err = rows.Err()
+		rows.Close()
+		if err != nil {
+			return nil, err
+		}
+		if len(list) == 0 {
+			continue
+		}
+		for i, j := 0, len(list)-1; i < j; i, j = i+1, j-1 {
+			list[i], list[j] = list[j], list[i]
+		}
+		out[id] = list
+	}
+	return out, nil
+}
+
+func (db *DB) monitorIDs(ctx context.Context) ([]int64, error) {
+	rows, err := db.r.QueryContext(ctx, `SELECT id FROM monitors ORDER BY id`)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	out := map[int64][]*Heartbeat{}
+	var ids []int64
 	for rows.Next() {
-		h, err := scanHeartbeat(rows)
-		if err != nil {
+		var id int64
+		if err := rows.Scan(&id); err != nil {
 			return nil, err
 		}
-		out[h.MonitorID] = append(out[h.MonitorID], h)
+		ids = append(ids, id)
 	}
-	return out, rows.Err()
+	return ids, rows.Err()
 }
 
 // HeartbeatsSince returns heartbeats of a monitor newer than sinceMs, oldest
@@ -228,6 +277,12 @@ type Uptime struct {
 // UptimeSince computes uptime and average ping over a window, from the
 // aggregates: hourly buckets for windows up to a week, daily beyond.
 func (db *DB) UptimeSince(ctx context.Context, ids []int64, window time.Duration) (map[int64]Uptime, error) {
+	if len(ids) == 0 {
+		var err error
+		if ids, err = db.monitorIDs(ctx); err != nil || len(ids) == 0 {
+			return map[int64]Uptime{}, err
+		}
+	}
 	table := "stat_hourly"
 	bucket := int64(3600)
 	if window > 7*24*time.Hour {
@@ -282,6 +337,12 @@ type Bucket struct {
 // Buckets returns the hourly or daily aggregates of the monitors in ids since
 // the given time, oldest first.
 func (db *DB) Buckets(ctx context.Context, ids []int64, daily bool, since time.Time) (map[int64][]Bucket, error) {
+	if len(ids) == 0 {
+		var err error
+		if ids, err = db.monitorIDs(ctx); err != nil || len(ids) == 0 {
+			return map[int64][]Bucket{}, err
+		}
+	}
 	table := "stat_hourly"
 	if daily {
 		table = "stat_daily"
@@ -355,19 +416,52 @@ func (db *DB) ClearAllStatistics(ctx context.Context) error {
 
 // Prune removes raw heartbeats older than keepDays and hourly aggregates
 // older than a year. Daily aggregates are kept: they are tiny and they are
-// what the one-year uptime is made of.
+// what the one-year uptime is made of. Aggregates of monitors that no longer
+// exist are dropped.
+//
+// Heartbeats go monitor by monitor through the (monitor_id, time) index and
+// in batches, so heartbeats being written never wait long behind it.
 func (db *DB) Prune(ctx context.Context, keepDays int) (int64, error) {
 	if keepDays <= 0 {
 		return 0, nil
 	}
 	cutoff := time.Now().AddDate(0, 0, -keepDays).UnixMilli()
-	res, err := db.w.ExecContext(ctx, `DELETE FROM heartbeats WHERE time < ?`, cutoff)
+	ids, err := db.monitorIDs(ctx)
 	if err != nil {
 		return 0, err
 	}
-	n, _ := res.RowsAffected()
-	_, err = db.w.ExecContext(ctx, `DELETE FROM stat_hourly WHERE ts < ?`, time.Now().AddDate(-1, 0, 0).Unix())
-	return n, err
+	var total int64
+	for _, id := range ids {
+		for {
+			res, err := db.w.ExecContext(ctx, `DELETE FROM heartbeats WHERE id IN (
+				SELECT id FROM heartbeats WHERE monitor_id = ? AND time < ? ORDER BY time LIMIT 5000)`, id, cutoff)
+			if err != nil {
+				return total, err
+			}
+			n, _ := res.RowsAffected()
+			total += n
+			if n < 5000 {
+				break
+			}
+		}
+	}
+	for _, q := range []string{
+		`DELETE FROM heartbeats WHERE monitor_id NOT IN (SELECT id FROM monitors)`,
+		`DELETE FROM stat_hourly WHERE monitor_id NOT IN (SELECT id FROM monitors)`,
+		`DELETE FROM stat_daily WHERE monitor_id NOT IN (SELECT id FROM monitors)`,
+	} {
+		if _, err := db.w.ExecContext(ctx, q); err != nil {
+			return total, err
+		}
+	}
+	if _, err := db.w.ExecContext(ctx, `DELETE FROM stat_hourly WHERE ts < ?`, time.Now().AddDate(-1, 0, 0).Unix()); err != nil {
+		return total, err
+	}
+	// Keep the WAL file from growing without end, and the planner's
+	// statistics up to date.
+	_, _ = db.w.ExecContext(ctx, `PRAGMA wal_checkpoint(TRUNCATE)`)
+	_, _ = db.w.ExecContext(ctx, `PRAGMA optimize`)
+	return total, nil
 }
 
 // DatabaseSize returns the size of the database in bytes.

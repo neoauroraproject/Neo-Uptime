@@ -274,3 +274,38 @@ func (db *DB) MonitorNotifications(ctx context.Context, monitorID int64) ([]*Not
 	}
 	return out, rows.Err()
 }
+
+// MergeMonitor folds monitor dup into keep — its history, aggregates, status
+// page places, maintenance windows and tags — and then deletes dup.
+func (db *DB) MergeMonitor(ctx context.Context, keep, dup int64) error {
+	if keep == dup {
+		return nil
+	}
+	return db.tx(ctx, func(tx *sql.Tx) error {
+		qs := []string{
+			`UPDATE heartbeats SET monitor_id=?1 WHERE monitor_id=?2`,
+			`UPDATE OR IGNORE status_page_monitors SET monitor_id=?1 WHERE monitor_id=?2`,
+			`UPDATE OR IGNORE maintenance_monitors SET monitor_id=?1 WHERE monitor_id=?2`,
+			`UPDATE OR IGNORE monitor_tags SET monitor_id=?1 WHERE monitor_id=?2`,
+		}
+		for _, t := range []string{"stat_hourly", "stat_daily"} {
+			qs = append(qs, `INSERT INTO `+t+` (monitor_id, ts, up, down, ping_sum, ping_cnt, ping_min, ping_max)
+				SELECT ?1, ts, up, down, ping_sum, ping_cnt, ping_min, ping_max FROM `+t+` WHERE monitor_id=?2 AND true
+				ON CONFLICT(monitor_id, ts) DO UPDATE SET
+				  up = up + excluded.up,
+				  down = down + excluded.down,
+				  ping_sum = ping_sum + excluded.ping_sum,
+				  ping_cnt = ping_cnt + excluded.ping_cnt,
+				  ping_min = CASE WHEN excluded.ping_min IS NULL THEN ping_min WHEN ping_min IS NULL OR excluded.ping_min < ping_min THEN excluded.ping_min ELSE ping_min END,
+				  ping_max = CASE WHEN excluded.ping_max IS NULL THEN ping_max WHEN ping_max IS NULL OR excluded.ping_max > ping_max THEN excluded.ping_max ELSE ping_max END`,
+				`DELETE FROM `+t+` WHERE monitor_id=?2`)
+		}
+		qs = append(qs, `DELETE FROM monitors WHERE id=?2`)
+		for _, q := range qs {
+			if _, err := tx.ExecContext(ctx, q, keep, dup); err != nil {
+				return err
+			}
+		}
+		return nil
+	})
+}

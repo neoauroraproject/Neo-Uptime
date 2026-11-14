@@ -1,8 +1,10 @@
 package monitor
 
 import (
+	"cmp"
 	"context"
 	"crypto/rand"
+	"crypto/sha256"
 	"encoding/hex"
 	"errors"
 	"fmt"
@@ -370,11 +372,39 @@ func KeyLinks(links []*xray.Link) []KeyedLink {
 	return out
 }
 
+func linkIdentity(raw string) string {
+	l, err := xray.Parse(raw)
+	if err != nil {
+		return ""
+	}
+	return l.Identity()
+}
+
+// skipIdent is how a skipped config is remembered whatever its name.
+func skipIdent(id string) string {
+	if id == "" {
+		return ""
+	}
+	sum := sha256.Sum256([]byte(id))
+	return "@" + hex.EncodeToString(sum[:12])
+}
+
+// mergeMonitor folds dup into keep and forgets dup.
+func (mg *Manager) mergeMonitor(ctx context.Context, keep, dup *store.Monitor) error {
+	if err := mg.db.MergeMonitor(ctx, keep.ID, dup.ID); err != nil {
+		return err
+	}
+	mg.env.Agents.x.forget(dup.ID)
+	mg.Remove(dup.ID)
+	return nil
+}
+
 // SubSyncResult says what syncing a subscription changed.
 type SubSyncResult struct {
 	Added      int     `json:"added"`
 	Updated    int     `json:"updated"`
 	Removed    int     `json:"removed"`
+	Merged     int     `json:"merged"` // monitors made twice for one config, folded together
 	Configs    int     `json:"configs"`
 	MonitorIDs []int64 `json:"monitorIds"`
 	GroupID    int64   `json:"groupId,omitempty"`
@@ -409,12 +439,46 @@ func (mg *Manager) SyncSubscription(ctx context.Context, id int64, keys []string
 	if err != nil {
 		return nil, err
 	}
-	existing := map[string]*store.Monitor{}
+	incoming := KeyLinks(s.Links)
+	identOf := map[string]string{} // key -> identity
+	inCount := map[string]int{}    // identity -> how many configs have it
+	for _, kl := range incoming {
+		id := kl.Link.Identity()
+		identOf[kl.Key] = id
+		inCount[id]++
+	}
+
+	res := &SubSyncResult{MonitorIDs: []int64{}, Configs: len(s.Links)}
+	// A config is known by what it points at, not by its name: providers put
+	// the traffic or days left in the name, which then changes on every
+	// fetch. Monitors that earlier versions made again for each new name are
+	// merged back into the oldest one, history and all.
+	var mine []*store.Monitor
 	for _, m := range all {
 		if m.Type == TypeXray && m.Config.SubscriptionID == x.ID {
-			existing[m.Config.ConfigName] = m
+			mine = append(mine, m)
 		}
 	}
+	slices.SortFunc(mine, func(a, b *store.Monitor) int { return cmp.Compare(a.ID, b.ID) })
+	groups := map[string][]*store.Monitor{}
+	var existing []*store.Monitor
+	for _, m := range mine {
+		id := linkIdentity(m.Config.Link)
+		if id == "" {
+			existing = append(existing, m)
+			continue
+		}
+		if g := groups[id]; len(g) >= max(inCount[id], 1) {
+			if err := mg.mergeMonitor(ctx, g[0], m); err != nil {
+				return nil, err
+			}
+			res.Merged++
+			continue
+		}
+		groups[id] = append(groups[id], m)
+		existing = append(existing, m)
+	}
+
 	skipped := map[string]bool{}
 	for _, k := range x.Skip {
 		skipped[k] = true
@@ -423,10 +487,19 @@ func (mg *Manager) SyncSubscription(ctx context.Context, id int64, keys []string
 	for _, k := range keys {
 		want[k] = true
 		delete(skipped, k)
+		if id := identOf[k]; id != "" {
+			delete(skipped, skipIdent(id))
+		}
 	}
 	if opt != nil {
 		for _, k := range opt.Skip {
 			skipped[k] = true
+		}
+	}
+	// A skipped config stays skipped when it is renamed.
+	for k := range skipped {
+		if id := identOf[k]; id != "" {
+			skipped[skipIdent(id)] = true
 		}
 	}
 	x.Skip = x.Skip[:0]
@@ -435,18 +508,54 @@ func (mg *Manager) SyncSubscription(ctx context.Context, id int64, keys []string
 	}
 	slices.Sort(x.Skip)
 
-	res := &SubSyncResult{MonitorIDs: []int64{}, Configs: len(s.Links)}
 	gid, err := mg.ensureSubGroup(ctx, x)
 	if err != nil {
 		return nil, err
 	}
 	res.GroupID = gid
 	o := mg.importOptions(ctx, opt, x.Interval)
-	present := map[string]bool{}
-	for _, kl := range KeyLinks(s.Links) {
-		present[kl.Key] = true
-		if m, ok := existing[kl.Key]; ok {
+
+	// Pair each config with a monitor: by name first, then by identity.
+	match := make([]*store.Monitor, len(incoming))
+	used := map[int64]bool{}
+	byKey := map[string]*store.Monitor{}
+	for _, m := range existing {
+		if _, dup := byKey[m.Config.ConfigName]; !dup {
+			byKey[m.Config.ConfigName] = m
+		}
+	}
+	for i, kl := range incoming {
+		if m := byKey[kl.Key]; m != nil && !used[m.ID] {
+			match[i], used[m.ID] = m, true
+		}
+	}
+	for i, kl := range incoming {
+		if match[i] != nil {
+			continue
+		}
+		for _, m := range groups[identOf[kl.Key]] {
+			if !used[m.ID] {
+				match[i], used[m.ID] = m, true
+				break
+			}
+		}
+	}
+
+	for i, kl := range incoming {
+		if m := match[i]; m != nil {
 			changed := false
+			if old := m.Config.ConfigName; old != kl.Key {
+				// The name follows the config's unless it was typed by hand.
+				if m.Name == CleanName(old) || m.Name == old {
+					m.Name = CleanName(kl.Key)
+				}
+				if m.Country == FlagCountry(old) {
+					if c := FlagCountry(kl.Key); c != "" {
+						m.Country = c
+					}
+				}
+				m.Config.ConfigName, changed = kl.Key, true
+			}
 			if m.Config.Link != kl.Link.Raw {
 				m.Config.Link, m.Description, changed = kl.Link.Raw, kl.Link.Summary(), true
 			}
@@ -462,7 +571,8 @@ func (mg *Manager) SyncSubscription(ctx context.Context, id int64, keys []string
 			}
 			continue
 		}
-		if keys != nil && !want[kl.Key] || keys == nil && (!x.AutoImport || skipped[kl.Key]) {
+		skip := skipped[kl.Key] || skipped[skipIdent(identOf[kl.Key])]
+		if keys != nil && !want[kl.Key] || keys == nil && (!x.AutoImport || skip) {
 			continue
 		}
 		m := &store.Monitor{
@@ -479,8 +589,8 @@ func (mg *Manager) SyncSubscription(ctx context.Context, id int64, keys []string
 		res.MonitorIDs = append(res.MonitorIDs, m.ID)
 		res.Added++
 	}
-	for key, m := range existing {
-		if present[key] || m.Config.Gone {
+	for _, m := range existing {
+		if used[m.ID] || m.Config.Gone {
 			continue
 		}
 		m.Config.Gone, m.Active = true, false
@@ -493,8 +603,8 @@ func (mg *Manager) SyncSubscription(ctx context.Context, id int64, keys []string
 	if err := mg.db.SaveSubscription(ctx, x); err != nil {
 		return nil, err
 	}
-	if res.Added+res.Updated+res.Removed > 0 {
-		log.Printf("subscription %s: %d added, %d updated, %d removed", x.Name, res.Added, res.Updated, res.Removed)
+	if res.Added+res.Updated+res.Removed+res.Merged > 0 {
+		log.Printf("subscription %s: %d added, %d updated, %d removed, %d duplicates merged", x.Name, res.Added, res.Updated, res.Removed, res.Merged)
 	}
 	mg.pub.Publish("subscriptions", map[string]any{"changed": x.ID})
 	return res, nil

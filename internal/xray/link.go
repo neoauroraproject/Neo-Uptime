@@ -589,3 +589,25 @@ func decodeBase64(s string) ([]byte, error) {
 	}
 	return base64.RawStdEncoding.DecodeString(s)
 }
+
+// Identity says which server and account a link points at, whatever it is
+// called: two links with the same identity are the same config. Providers
+// often put the traffic left or the days left in a config's name, so the
+// name changes on every fetch while the config stays the same.
+func (l *Link) Identity() string {
+	if l.outbound == nil {
+		raw, _, _ := strings.Cut(l.Raw, "#")
+		return raw
+	}
+	ob := make(map[string]any, len(l.outbound))
+	for k, v := range l.outbound {
+		if k != "tag" {
+			ob[k] = v
+		}
+	}
+	b, err := json.Marshal(ob)
+	if err != nil {
+		return ""
+	}
+	return l.Protocol + " " + string(b)
+}
